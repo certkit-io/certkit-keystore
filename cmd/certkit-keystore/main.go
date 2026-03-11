@@ -34,7 +34,7 @@ func usageAndExit() {
 	fmt.Fprintf(os.Stderr, "Usage: certkit-keystore <command> [options]\n\n")
 	fmt.Fprintf(os.Stderr, "Commands:\n")
 	fmt.Fprintf(os.Stderr, "  install     Install as a system service\n")
-	fmt.Fprintf(os.Stderr, "    --id            Keystore ID (or set CERTKIT_KEYSTORE_ID)\n")
+	fmt.Fprintf(os.Stderr, "    --key           Registration key: {app_id}.{keystore_id} (or set CERTKIT_REGISTRATION_KEY)\n")
 	fmt.Fprintf(os.Stderr, "    --config        Path to config file (default: config.json)\n")
 	fmt.Fprintf(os.Stderr, "    --port          Keystore listen port (default: 8989)\n")
 	fmt.Fprintf(os.Stderr, "    --storage-dir   Directory for key storage (default: ./)\n")

@@ -2,9 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"time"
 
+	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 )
 
@@ -42,11 +44,15 @@ func runCmd(args []string) {
 }
 
 func doRegister(cfg *config.Config) error {
-	// TODO: collect system metadata (hostname, OS, etc.)
-	// TODO: POST public key + metadata to CertKit API
-	// TODO: receive keystore ID from server
+	versionStr := fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, buildDate)
 
-	// Mark as initialized and persist
+	resp, err := api.RegisterKeystore(versionStr)
+	if err != nil {
+		return fmt.Errorf("register keystore: %w", err)
+	}
+
+	log.Printf("Registered with CertKit, keystore ID confirmed: %s", resp.KeystoreId)
+
 	cfg.Keystore.Initialized = true
 	config.CurrentConfig = *cfg
 

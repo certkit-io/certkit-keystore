@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
 )
@@ -14,17 +15,18 @@ var CurrentConfig Config
 var CurrentPath string
 
 type Config struct {
-	CertkitBaseUrl string         `json:"certkit_base_url"`
-	Keystore       *KeystoreInfo  `json:"keystore"`
-	Auth           *AuthCreds     `json:"auth,omitempty"`
+	CertkitBaseUrl string        `json:"certkit_base_url"`
+	Keystore       *KeystoreInfo `json:"keystore"`
+	Auth           *AuthCreds    `json:"auth,omitempty"`
 }
 
 type KeystoreInfo struct {
-	Id          string `json:"id"`
-	BaseUrl     string `json:"base_url"`
-	Port        string `json:"port"`
-	StorageDir  string `json:"storage_dir"`
-	Initialized bool   `json:"initialized"`
+	Id            string `json:"id"`
+	ApplicationId string `json:"application_id"`
+	BaseUrl       string `json:"base_url"`
+	Port          string `json:"port"`
+	StorageDir    string `json:"storage_dir"`
+	Initialized   bool   `json:"initialized"`
 }
 
 type AuthCreds struct {
@@ -38,16 +40,29 @@ func hasKeyPair(cfg *Config) bool {
 		cfg.Auth.KeyPair.PrivateKey != ""
 }
 
-const DefaultCertkitBaseUrl = "https://app.certkit.io/"
+const DefaultCertkitBaseUrl = "https://localhost:44301" //"https://app.certkit.io/"
 const DefaultKeystorePort = "8989"
 const DefaultStorageDir = "./"
 
-func CreateInitialConfig(configPath string, keystoreId string, port string, storageDir string) error {
-	if keystoreId == "" {
-		keystoreId = os.Getenv("CERTKIT_KEYSTORE_ID")
+func ParseRegistrationKey(key string) (applicationId string, keystoreId string, err error) {
+	parts := strings.SplitN(key, ".", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid registration key format: expected {app_id}.{keystore_id}")
 	}
-	if keystoreId == "" {
-		return fmt.Errorf("keystore id is required: pass --id or set CERTKIT_KEYSTORE_ID")
+	return parts[0], parts[1], nil
+}
+
+func CreateInitialConfig(configPath string, registrationKey string, port string, storageDir string) error {
+	if registrationKey == "" {
+		registrationKey = os.Getenv("CERTKIT_REGISTRATION_KEY")
+	}
+	if registrationKey == "" {
+		return fmt.Errorf("registration key is required: pass --key or set CERTKIT_REGISTRATION_KEY")
+	}
+
+	applicationId, keystoreId, err := ParseRegistrationKey(registrationKey)
+	if err != nil {
+		return err
 	}
 
 	if port == "" {
@@ -65,11 +80,12 @@ func CreateInitialConfig(configPath string, keystoreId string, port string, stor
 	cfg := Config{
 		CertkitBaseUrl: certkitBaseUrl,
 		Keystore: &KeystoreInfo{
-			Id:          keystoreId,
-			BaseUrl:     fmt.Sprintf("https://localhost:%s", port),
-			Port:        port,
-			StorageDir:  storageDir,
-			Initialized: false,
+			Id:            keystoreId,
+			ApplicationId: applicationId,
+			BaseUrl:       fmt.Sprintf("https://localhost:%s", port),
+			Port:          port,
+			StorageDir:    storageDir,
+			Initialized:   false,
 		},
 	}
 

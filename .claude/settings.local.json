@@ -6,7 +6,8 @@
       "Bash(go mod:*)",
       "Bash(go build:*)",
       "Bash(powershell -ExecutionPolicy Bypass -File scripts/build.ps1)",
-      "Bash(timeout 2 go run ./cmd/certkit-keystore run -config /tmp/ks-config.json || true)"
+      "Bash(timeout 2 go run ./cmd/certkit-keystore run -config /tmp/ks-config.json || true)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
