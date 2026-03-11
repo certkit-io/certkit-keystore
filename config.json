@@ -1,0 +1,6 @@
+{
+	"certkit_base_url" :"https://app.certkit.io/",
+	"keystore_base_url": "https://localhost:8989",
+	"keystore_port": "8989",
+	"storage_dir" : "./"
+}

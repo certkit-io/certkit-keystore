@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(go mod:*)",
+      "Bash(go build:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -File scripts/build.ps1)"
+    ]
+  }
+}
