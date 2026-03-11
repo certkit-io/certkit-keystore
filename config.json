@@ -1,6 +1,16 @@
 {
-	"certkit_base_url" :"https://app.certkit.io/",
-	"keystore_base_url": "https://localhost:8989",
-	"keystore_port": "8989",
-	"storage_dir" : "./"
+  "certkit_base_url": "https://app.certkit.io/",
+  "keystore": {
+    "id": "eric",
+    "base_url": "https://localhost:8989",
+    "port": "8989",
+    "storage_dir": "./",
+    "initialized": true
+  },
+  "auth": {
+    "key_pair": {
+      "public_key": "n_o819HNBJ-lFMxFVESXttapwku2HKv1O_U1cZK05PM",
+      "private_key": "NyM8Ze_BQrD8FvvSeYRUTFl1082Tl2-f7tTXERxc0D-f-jzX0c0En6UUzEVURJe21qnCS7Ycq_U79TVxkrTk8w"
+    }
+  }
 }

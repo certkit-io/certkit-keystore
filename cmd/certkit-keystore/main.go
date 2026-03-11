@@ -1,11 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
-	"time"
-
-	"github.com/certkit-io/certkit-keystore/config"
 )
 
 var (
@@ -15,27 +13,33 @@ var (
 )
 
 func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.LUTC)
+	log.SetOutput(os.Stdout)
+	log.SetFlags(log.LstdFlags | log.LUTC)
 
-	log.Printf("certkit-keystore %s (commit: %s, built: %s)", version, commit, buildDate)
-
-	configPath := "config.json"
-	if len(os.Args) > 1 {
-		configPath = os.Args[1]
+	if len(os.Args) < 2 {
+		usageAndExit()
 	}
 
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+	switch os.Args[1] {
+	case "install":
+		installCmd(os.Args[2:])
+	case "run":
+		runCmd(os.Args[2:])
+	default:
+		usageAndExit()
 	}
+}
 
-	log.Printf("CertKit Base URL: %s", cfg.CertkitBaseUrl)
-	log.Printf("Keystore Base URL: %s", cfg.KeystoreBaseUrl)
-
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		log.Println("hi from certkit-keystore")
-	}
+func usageAndExit() {
+	fmt.Fprintf(os.Stderr, "Usage: certkit-keystore <command> [options]\n\n")
+	fmt.Fprintf(os.Stderr, "Commands:\n")
+	fmt.Fprintf(os.Stderr, "  install     Install as a system service\n")
+	fmt.Fprintf(os.Stderr, "    --id            Keystore ID (or set CERTKIT_KEYSTORE_ID)\n")
+	fmt.Fprintf(os.Stderr, "    --config        Path to config file (default: config.json)\n")
+	fmt.Fprintf(os.Stderr, "    --port          Keystore listen port (default: 8989)\n")
+	fmt.Fprintf(os.Stderr, "    --storage-dir   Directory for key storage (default: ./)\n")
+	fmt.Fprintf(os.Stderr, "\n")
+	fmt.Fprintf(os.Stderr, "  run         Run in foreground (debug mode)\n")
+	fmt.Fprintf(os.Stderr, "    --config        Path to config file (default: config.json)\n")
+	os.Exit(1)
 }
