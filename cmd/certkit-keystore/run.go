@@ -8,6 +8,7 @@ import (
 
 	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
+	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
 )
 
 func runCmd(args []string) {
@@ -41,7 +42,7 @@ func runCmd(args []string) {
 	if resp, err := api.PollForConfiguration(v); err != nil {
 		log.Printf("Initial poll failed: %v", err)
 	} else {
-		log.Printf("", resp)
+		processPollResponse(v, resp)
 	}
 
 	ticker := time.NewTicker(30 * time.Second)
@@ -49,10 +50,34 @@ func runCmd(args []string) {
 
 	for range ticker.C {
 		if resp, err := api.PollForConfiguration(v); err != nil {
-			log.Printf("Poll failed: %#v", err)
+			log.Printf("Poll failed: %v", err)
 		} else {
-			log.Printf("", resp)
+			processPollResponse(v, resp)
 		}
+	}
+}
+
+func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
+	for _, cert := range resp.Certificates {
+		if cert.CSR == nil {
+			continue
+		}
+
+		log.Printf("CSR requested for cert %s (algorithm: %s, SANs: %v)",
+			cert.CustomCertId, cert.CSR.KeyAlgorithm, cert.CSR.SANs)
+
+		csrPEM, _, err := keystoreCrypto.GenerateCSR(cert.CSR.SANs, string(cert.CSR.KeyAlgorithm))
+		if err != nil {
+			log.Printf("Failed to generate CSR for %s: %v", cert.CustomCertId, err)
+			continue
+		}
+
+		if err := api.SetCSR(v, cert.CustomCertId, csrPEM); err != nil {
+			log.Printf("Failed to submit CSR for %s: %v", cert.CustomCertId, err)
+			continue
+		}
+
+		log.Printf("CSR submitted for cert %s", cert.CustomCertId)
 	}
 }
 
