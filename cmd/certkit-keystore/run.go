@@ -9,6 +9,7 @@ import (
 	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
+	"github.com/certkit-io/certkit-keystore/storage"
 )
 
 func runCmd(args []string) {
@@ -59,25 +60,56 @@ func runCmd(args []string) {
 
 func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
 	for _, cert := range resp.Certificates {
-		if cert.CSR == nil {
-			continue
+		// If there's an issued cert, ensure files and metadata are on disk
+		if cert.LatestIssuedCert != nil {
+			// If the cert has no key but we have a pending CSR, check if it matches
+			if cert.LatestIssuedCert.Key == "" && !storage.IsKeyOnDisk(cert.CustomCertId, cert.LatestIssuedCert.SHA1) && storage.HasPendingCSR(cert.CustomCertId) {
+				matched, err := storage.MatchAndAdoptCSRKey(cert.CustomCertId, cert.LatestIssuedCert)
+				if err != nil {
+					log.Printf("Failed to match CSR key for %s: %v", cert.CustomCertId, err)
+				} else if matched {
+					log.Printf("Matched CSR key to issued cert %s, adopted key", cert.CustomCertId)
+				}
+			}
+
+			wrote, err := storage.EnsureCertOnDisk(cert.CustomCertId, cert.LatestIssuedCert)
+			if err != nil {
+				log.Printf("Failed to write cert %s to disk: %v", cert.CustomCertId, err)
+			} else if wrote {
+				log.Printf("Wrote cert %s (sha1: %s) to disk", cert.CustomCertId, cert.LatestIssuedCert.SHA1)
+			}
+
+			updated, err := storage.EnsureMetadata(cert.CustomCertId, cert.LatestIssuedCert)
+			if err != nil {
+				log.Printf("Failed to write metadata for %s: %v", cert.CustomCertId, err)
+			} else if updated {
+				log.Printf("Updated metadata for cert %s", cert.CustomCertId)
+			}
 		}
 
-		log.Printf("CSR requested for cert %s (algorithm: %s, SANs: %v)",
-			cert.CustomCertId, cert.CSR.KeyAlgorithm, cert.CSR.SANs)
+		// If there's a CSR request, generate, save, and submit it
+		if cert.CSR != nil {
+			log.Printf("CSR requested for cert %s (algorithm: %s, SANs: %v)",
+				cert.CustomCertId, cert.CSR.KeyAlgorithm, cert.CSR.SANs)
 
-		csrPEM, _, err := keystoreCrypto.GenerateCSR(cert.CSR.SANs, string(cert.CSR.KeyAlgorithm))
-		if err != nil {
-			log.Printf("Failed to generate CSR for %s: %v", cert.CustomCertId, err)
-			continue
+			csrPEM, keyPEM, err := keystoreCrypto.GenerateCSR(cert.CSR.SANs, string(cert.CSR.KeyAlgorithm))
+			if err != nil {
+				log.Printf("Failed to generate CSR for %s: %v", cert.CustomCertId, err)
+				continue
+			}
+
+			if err := storage.SaveCSR(cert.CustomCertId, csrPEM, keyPEM); err != nil {
+				log.Printf("Failed to save CSR for %s to disk: %v", cert.CustomCertId, err)
+				continue
+			}
+
+			if err := api.SetCSR(v, cert.CustomCertId, csrPEM); err != nil {
+				log.Printf("Failed to submit CSR for %s: %v", cert.CustomCertId, err)
+				continue
+			}
+
+			log.Printf("CSR submitted for cert %s", cert.CustomCertId)
 		}
-
-		if err := api.SetCSR(v, cert.CustomCertId, csrPEM); err != nil {
-			log.Printf("Failed to submit CSR for %s: %v", cert.CustomCertId, err)
-			continue
-		}
-
-		log.Printf("CSR submitted for cert %s", cert.CustomCertId)
 	}
 }
 
