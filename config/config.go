@@ -33,6 +33,12 @@ type AuthCreds struct {
 	KeyPair *keystoreCrypto.KeyPair `json:"key_pair"`
 }
 
+type VersionInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
 func hasKeyPair(cfg *Config) bool {
 	return cfg.Auth != nil &&
 		cfg.Auth.KeyPair != nil &&

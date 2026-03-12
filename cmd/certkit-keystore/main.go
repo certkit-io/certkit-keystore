@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+
+	"github.com/certkit-io/certkit-keystore/config"
 )
 
 var (
@@ -11,6 +13,14 @@ var (
 	commit    = "unknown"
 	buildDate = "unknown"
 )
+
+func Version() config.VersionInfo {
+	return config.VersionInfo{
+		Version: version,
+		Commit:  commit,
+		Date:    buildDate,
+	}
+}
 
 func main() {
 	log.SetOutput(os.Stdout)

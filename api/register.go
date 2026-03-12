@@ -35,7 +35,7 @@ type RegisterKeystoreResponse struct {
 	KeystoreId string `json:"keystore_id"`
 }
 
-func RegisterKeystore(versionStr string) (*RegisterKeystoreResponse, error) {
+func RegisterKeystore(v config.VersionInfo) (*RegisterKeystoreResponse, error) {
 	cfg := &config.CurrentConfig
 
 	hostname, _ := os.Hostname()
@@ -53,7 +53,7 @@ func RegisterKeystore(versionStr string) (*RegisterKeystoreResponse, error) {
 		KeystoreBaseUrl:  cfg.Keystore.BaseUrl,
 		MachineId:        machineId,
 		Hostname:         hostname,
-		Version:          versionStr,
+		Version:          v.Version,
 		OperatingSystem:  runtime.GOOS,
 		Timezone:         utils.FormatTimezone(),
 		PathToBin:        binPath,

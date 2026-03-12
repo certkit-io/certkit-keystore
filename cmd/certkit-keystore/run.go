@@ -15,7 +15,8 @@ func runCmd(args []string) {
 	configPath := fs.String("config", "config.json", "path to config file")
 	fs.Parse(args)
 
-	log.Printf("certkit-keystore %s (commit: %s, built: %s)", version, commit, buildDate)
+	v := Version()
+	log.Printf("certkit-keystore %s (commit: %s, built: %s)", v.Version, v.Commit, v.Date)
 
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
@@ -35,18 +36,29 @@ func runCmd(args []string) {
 		log.Println("Registration complete")
 	}
 
+	// Initial poll
+	log.Println("Starting polling loop...")
+	if resp, err := api.PollForConfiguration(v); err != nil {
+		log.Printf("Initial poll failed: %v", err)
+	} else {
+		log.Printf("", resp)
+	}
+
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		log.Println("hi from certkit-keystore")
+		if resp, err := api.PollForConfiguration(v); err != nil {
+			log.Printf("Poll failed: %#v", err)
+		} else {
+			log.Printf("", resp)
+		}
 	}
 }
 
 func doRegister(cfg *config.Config) error {
-	versionStr := fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, buildDate)
-
-	resp, err := api.RegisterKeystore(versionStr)
+	v := Version()
+	resp, err := api.RegisterKeystore(v)
 	if err != nil {
 		return fmt.Errorf("register keystore: %w", err)
 	}
