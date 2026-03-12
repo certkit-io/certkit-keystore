@@ -27,7 +27,7 @@ type PollCertificate struct {
 }
 
 type IssuedCert struct {
-	Id           string    `json:"id"`
+	Id           int       `json:"id"`
 	SHA1         string    `json:"sha1"`
 	SHA256       string    `json:"sha256"`
 	SerialNumber string    `json:"serialNumber"`
