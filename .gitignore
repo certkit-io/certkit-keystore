@@ -33,3 +33,6 @@ dist/
 # Editor/IDE
 # .idea/
 # .vscode/
+
+test-storage/
+config.json
