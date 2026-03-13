@@ -111,9 +111,11 @@ func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
 			if cert.LatestIssuedCert.Key == "" && !keyOnDisk && storage.HasPendingCSR(cert.CustomCertId) {
 				matched, err := storage.MatchAndAdoptCSRKey(cert.CustomCertId, cert.LatestIssuedCert)
 				if err != nil {
-					log.Printf("Failed to match CSR key for %s: %v", cert.CustomCertId, err)
+					log.Printf("Error while matching CSR key for %s: %v", cert.CustomCertId, err)
 				} else if matched {
 					log.Printf("Matched CSR key to issued cert %s, adopted key", cert.CustomCertId)
+				} else {
+					log.Printf("Failed to match CSR key for %s: %v", cert.CustomCertId, cert.LatestIssuedCert)
 				}
 			}
 
@@ -139,6 +141,12 @@ func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
 			} else {
 				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.Synced})
 			}
+			continue
+		}
+
+		// No issued cert — check if there's a pending CSR on disk
+		if storage.HasPendingCSR(cert.CustomCertId) {
+			statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.PendingCSR})
 		}
 	}
 
@@ -161,7 +169,7 @@ func runStartupChecks(v config.VersionInfo) {
 	}
 
 	log.Println("All startup checks passed")
-	if logErr := api.LogKeystoreEvent(v, "Successfully started keystore", api.LogEvents.Startup, false); logErr != nil {
+	if logErr := api.LogKeystoreEvent(v, "Keystore running.", api.LogEvents.Startup, false); logErr != nil {
 		log.Printf("Failed to send startup log to CertKit: %v", logErr)
 	}
 }
