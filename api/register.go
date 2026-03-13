@@ -28,6 +28,7 @@ type RegisterKeystoreRequest struct {
 	PathToBin        string `json:"path_to_bin"`
 	PathToConfig     string `json:"path_to_config"`
 	HostType         string `json:"host_type"`
+	StorageDir       string `json:"storageDir"`
 }
 
 type RegisterKeystoreResponse struct {
@@ -59,6 +60,7 @@ func RegisterKeystore(v config.VersionInfo) (*RegisterKeystoreResponse, error) {
 		PathToBin:        binPath,
 		PathToConfig:     config.CurrentPath,
 		HostType:         utils.DetectHostType(),
+		StorageDir:       cfg.Keystore.StorageDir,
 	}
 
 	body, err := json.Marshal(req)
