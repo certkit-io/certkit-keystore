@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/certkit-io/certkit-keystore/api"
@@ -37,6 +39,9 @@ func runCmd(args []string) {
 		}
 		log.Println("Registration complete")
 	}
+
+	// Run startup checks
+	runStartupChecks(v)
 
 	// Initial poll
 	log.Println("Starting polling loop...")
@@ -111,6 +116,54 @@ func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
 			log.Printf("CSR submitted for cert %s", cert.CustomCertId)
 		}
 	}
+}
+
+func runStartupChecks(v config.VersionInfo) {
+	log.Println("Running startup checks...")
+
+	if err := checkStorageDirWritable(); err != nil {
+		msg := fmt.Sprintf("Storage directory is not writable: %v", err)
+		log.Printf("Startup check FAILED: %s", msg)
+		if logErr := api.LogKeystoreEvent(v, msg, api.LogEvents.Startup, true); logErr != nil {
+			log.Printf("Failed to send startup error to CertKit: %v", logErr)
+		}
+		return
+	}
+
+	log.Println("All startup checks passed")
+	if logErr := api.LogKeystoreEvent(v, "Successfully started keystore", api.LogEvents.Startup, false); logErr != nil {
+		log.Printf("Failed to send startup log to CertKit: %v", logErr)
+	}
+}
+
+func checkStorageDirWritable() error {
+	dir := config.CurrentConfig.Keystore.StorageDir
+	testPath := filepath.Join(dir, ".certkit-healthcheck")
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create storage directory: %w", err)
+	}
+
+	testData := []byte("certkit-keystore-healthcheck")
+	if err := os.WriteFile(testPath, testData, 0o600); err != nil {
+		return fmt.Errorf("write test file: %w", err)
+	}
+
+	readBack, err := os.ReadFile(testPath)
+	if err != nil {
+		return fmt.Errorf("read test file: %w", err)
+	}
+
+	if string(readBack) != string(testData) {
+		os.Remove(testPath)
+		return fmt.Errorf("read-back mismatch")
+	}
+
+	if err := os.Remove(testPath); err != nil {
+		return fmt.Errorf("remove test file: %w", err)
+	}
+
+	return nil
 }
 
 func doRegister(cfg *config.Config) error {
