@@ -64,11 +64,51 @@ func runCmd(args []string) {
 }
 
 func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
+	var statuses []api.UpdateStatusItem
+
 	for _, cert := range resp.Certificates {
+		// If there's a CSR request, generate, save, and submit it
+		if cert.CSR != nil {
+			log.Printf("CSR requested for cert %s (algorithm: %s, SANs: %v)",
+				cert.CustomCertId, cert.CSR.KeyAlgorithm, cert.CSR.SANs)
+
+			if storage.HasPendingCSR(cert.CustomCertId) {
+				msg := fmt.Sprintf("Creating new CSR for %s even though there is an existing one present", cert.CustomCertId)
+				log.Println(msg)
+				if logErr := api.LogKeystoreEvent(v, msg, api.LogEvents.Info, false); logErr != nil {
+					log.Printf("Failed to send log to CertKit: %v", logErr)
+				}
+			}
+
+			csrPEM, keyPEM, err := keystoreCrypto.GenerateCSR(cert.CSR.SANs, string(cert.CSR.KeyAlgorithm))
+			if err != nil {
+				log.Printf("Failed to generate CSR for %s: %v", cert.CustomCertId, err)
+				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()})
+				continue
+			}
+
+			if err := storage.SaveCSR(cert.CustomCertId, csrPEM, keyPEM); err != nil {
+				log.Printf("Failed to save CSR for %s to disk: %v", cert.CustomCertId, err)
+				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()})
+				continue
+			}
+
+			if err := api.SetCSR(v, cert.CustomCertId, csrPEM); err != nil {
+				log.Printf("Failed to submit CSR for %s: %v", cert.CustomCertId, err)
+				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()})
+				continue
+			}
+
+			log.Printf("CSR submitted for cert %s", cert.CustomCertId)
+			statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.PendingCSR})
+			continue
+		}
+
 		// If there's an issued cert, ensure files and metadata are on disk
 		if cert.LatestIssuedCert != nil {
 			// If the cert has no key but we have a pending CSR, check if it matches
-			if cert.LatestIssuedCert.Key == "" && !storage.IsKeyOnDisk(cert.CustomCertId, cert.LatestIssuedCert.SHA1) && storage.HasPendingCSR(cert.CustomCertId) {
+			keyOnDisk, _ := storage.IsKeyOnDisk(cert.CustomCertId, cert.LatestIssuedCert.SHA1)
+			if cert.LatestIssuedCert.Key == "" && !keyOnDisk && storage.HasPendingCSR(cert.CustomCertId) {
 				matched, err := storage.MatchAndAdoptCSRKey(cert.CustomCertId, cert.LatestIssuedCert)
 				if err != nil {
 					log.Printf("Failed to match CSR key for %s: %v", cert.CustomCertId, err)
@@ -80,6 +120,8 @@ func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
 			wrote, err := storage.EnsureCertOnDisk(cert.CustomCertId, cert.LatestIssuedCert)
 			if err != nil {
 				log.Printf("Failed to write cert %s to disk: %v", cert.CustomCertId, err)
+				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.CertNotStored, Message: err.Error()})
+				continue
 			} else if wrote {
 				log.Printf("Wrote cert %s (sha1: %s) to disk", cert.CustomCertId, cert.LatestIssuedCert.SHA1)
 			}
@@ -90,32 +132,20 @@ func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
 			} else if updated {
 				log.Printf("Updated metadata for cert %s", cert.CustomCertId)
 			}
-		}
 
-		// If there's a CSR request, generate, save, and submit it
-		if cert.CSR != nil {
-			log.Printf("CSR requested for cert %s (algorithm: %s, SANs: %v)",
-				cert.CustomCertId, cert.CSR.KeyAlgorithm, cert.CSR.SANs)
-
-			csrPEM, keyPEM, err := keystoreCrypto.GenerateCSR(cert.CSR.SANs, string(cert.CSR.KeyAlgorithm))
-			if err != nil {
-				log.Printf("Failed to generate CSR for %s: %v", cert.CustomCertId, err)
-				continue
+			// Determine final status for this cert
+			if keyFound, keyErr := storage.IsKeyOnDisk(cert.CustomCertId, cert.LatestIssuedCert.SHA1); !keyFound {
+				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.KeyNotFound, Message: keyErr.Error()})
+			} else {
+				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.Synced})
 			}
-
-			if err := storage.SaveCSR(cert.CustomCertId, csrPEM, keyPEM); err != nil {
-				log.Printf("Failed to save CSR for %s to disk: %v", cert.CustomCertId, err)
-				continue
-			}
-
-			if err := api.SetCSR(v, cert.CustomCertId, csrPEM); err != nil {
-				log.Printf("Failed to submit CSR for %s: %v", cert.CustomCertId, err)
-				continue
-			}
-
-			log.Printf("CSR submitted for cert %s", cert.CustomCertId)
 		}
 	}
+
+	if err := api.UpdateStatus(v, statuses); err != nil {
+		log.Printf("Failed to send status update to CertKit: %v", err)
+	}
+
 }
 
 func runStartupChecks(v config.VersionInfo) {

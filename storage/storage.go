@@ -48,7 +48,7 @@ func writeFileIfMissing(path string, content []byte) (bool, error) {
 		return false, nil
 	}
 	if err := os.WriteFile(path, content, 0o600); err != nil {
-		return false, fmt.Errorf("write %s: %w", path, err)
+		return false, fmt.Errorf("could not write %s: %w", path, err)
 	}
 	return true, nil
 }
@@ -62,7 +62,7 @@ func EnsureCertOnDisk(customCertId string, cert *api.IssuedCert) (bool, error) {
 	dir := issuedCertDir(customCertId, cert.SHA1)
 
 	if err := ensureDir(dir); err != nil {
-		return false, fmt.Errorf("create directory %s: %w", dir, err)
+		return false, fmt.Errorf("could not create directory: %w", err)
 	}
 
 	files := map[string]string{
@@ -87,10 +87,14 @@ func EnsureCertOnDisk(customCertId string, cert *api.IssuedCert) (bool, error) {
 	return wrote, nil
 }
 
-// IsKeyOnDisk returns true if key.pem exists in the cert's SHA1 directory.
-func IsKeyOnDisk(customCertId string, sha1 string) bool {
-	_, err := os.Stat(filepath.Join(issuedCertDir(customCertId, sha1), "key.pem"))
-	return err == nil
+// IsKeyOnDisk checks if key.pem exists in the cert's SHA1 directory.
+// Returns (true, nil) if found, (false, error) if not.
+func IsKeyOnDisk(customCertId string, sha1 string) (bool, error) {
+	path := filepath.Join(issuedCertDir(customCertId, sha1), "key.pem")
+	if _, err := os.Stat(path); err != nil {
+		return false, fmt.Errorf("key not found at %s", path)
+	}
+	return true, nil
 }
 
 // EnsureMetadata writes or updates metadata.json if the latest cert SHA1

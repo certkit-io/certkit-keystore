@@ -13,23 +13,33 @@ import (
 	"github.com/certkit-io/certkit-keystore/config"
 )
 
-type EventType string
+type CertStatus string
 
-var LogEvents = struct {
-	Startup EventType
-	Info    EventType
+var CertStatuses = struct {
+	Synced        CertStatus
+	KeyNotFound   CertStatus
+	CertNotStored CertStatus
+	PendingCSR    CertStatus
+	GeneralError  CertStatus
 }{
-	Startup: "startup",
-	Info:    "info",
+	Synced:        "Synced",
+	KeyNotFound:   "KeyNotFound",
+	CertNotStored: "CertNotStored",
+	PendingCSR:    "PendingCSR",
+	GeneralError:  "GeneralError",
 }
 
-type LogKeystoreEventRequest struct {
-	Message   string    `json:"message"`
-	EventType EventType `json:"eventType"`
-	IsError   bool      `json:"isError"`
+type UpdateStatusRequest struct {
+	Statuses []UpdateStatusItem `json:"statuses"`
 }
 
-func LogKeystoreEvent(v config.VersionInfo, message string, eventType EventType, isError bool) error {
+type UpdateStatusItem struct {
+	CustomCertId string     `json:"customCertId"`
+	Status       CertStatus `json:"status"`
+	Message      string     `json:"message,omitempty"`
+}
+
+func UpdateStatus(v config.VersionInfo, statuses []UpdateStatusItem) error {
 	cfg := &config.CurrentConfig
 
 	priv, err := cfg.Auth.KeyPair.DecodePrivateKey()
@@ -37,17 +47,13 @@ func LogKeystoreEvent(v config.VersionInfo, message string, eventType EventType,
 		return fmt.Errorf("decode private key: %w", err)
 	}
 
-	body, err := json.Marshal(LogKeystoreEventRequest{
-		Message:   message,
-		EventType: eventType,
-		IsError:   isError,
-	})
+	body, err := json.Marshal(UpdateStatusRequest{Statuses: statuses})
 	if err != nil {
-		return fmt.Errorf("marshal log request: %w", err)
+		return fmt.Errorf("marshal update-status request: %w", err)
 	}
 
 	url := strings.TrimRight(cfg.CertkitBaseUrl, "/") +
-		"/api/keystore/v1/" + cfg.Keystore.Id + "/log"
+		"/api/keystore/v1/" + cfg.Keystore.Id + "/update-status"
 
 	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -72,7 +78,7 @@ func LogKeystoreEvent(v config.VersionInfo, message string, eventType EventType,
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("log failed: status=%d body=%s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("update-status failed: status=%d body=%s", resp.StatusCode, string(respBody))
 	}
 
 	return nil
