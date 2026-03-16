@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -92,7 +91,6 @@ func PollForConfiguration(v config.VersionInfo) (*PollResponse, error) {
 		return &PollResponse{}, nil
 	case http.StatusOK:
 		var result PollResponse
-		log.Printf("%s", respBody)
 		if err := json.Unmarshal(respBody, &result); err != nil {
 			return nil, fmt.Errorf("decode poll response: %w", err)
 		}

@@ -20,9 +20,9 @@ type FetchCertificateRequest struct {
 }
 
 type FetchCertificateResponse struct {
-	CertificatePem  string `json:"certificatePem"`
-	KeyPem          string `json:"keyPem"`
-	CertificateSha1 string `json:"certificateSha1"`
+	CertificatePem  string `json:"certificate_pem"`
+	KeyPem          string `json:"key_pem"`
+	CertificateSha1 string `json:"certificate_sha1"`
 }
 
 func handleFetchCertificate(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +49,7 @@ func handleFetchCertificate(w http.ResponseWriter, r *http.Request) {
 	// Combine cert + chain (matching .NET FullCertificateAndChainPem)
 	fullPEM := certFiles.CertPEM
 	if certFiles.ChainPEM != "" {
-		fullPEM += certFiles.ChainPEM
+		fullPEM += "\n" + certFiles.ChainPEM
 	}
 
 	resp := FetchCertificateResponse{
