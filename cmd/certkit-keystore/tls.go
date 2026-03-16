@@ -273,6 +273,7 @@ func (m *TLSManager) startServer() error {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", handleRoot)
 	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-certificate", handleFetchCertificate)
 	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-pfx", handleFetchPfx)
 
