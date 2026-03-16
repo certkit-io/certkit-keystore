@@ -199,6 +199,52 @@ func SaveCSR(customCertId string, csrPEM string, keyPEM string) error {
 	return nil
 }
 
+// ReadLatestCert reads the latest issued certificate files from disk for the
+// given customCertId. Returns the PEM contents and SHA1 thumbprint.
+func ReadLatestCert(customCertId string) (*CertFiles, error) {
+	data, err := os.ReadFile(metadataPath(customCertId))
+	if err != nil {
+		return nil, fmt.Errorf("read metadata: %w", err)
+	}
+
+	var meta CertMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, fmt.Errorf("parse metadata: %w", err)
+	}
+	if meta.LatestCert == nil {
+		return nil, fmt.Errorf("no latest certificate in metadata")
+	}
+
+	sha1 := meta.LatestCert.SHA1
+	dir := issuedCertDir(customCertId, sha1)
+
+	certPEM, err := os.ReadFile(filepath.Join(dir, "cert.pem"))
+	if err != nil {
+		return nil, fmt.Errorf("read cert.pem: %w", err)
+	}
+
+	keyPEM, err := os.ReadFile(filepath.Join(dir, "key.pem"))
+	if err != nil {
+		return nil, fmt.Errorf("read key.pem: %w", err)
+	}
+
+	chainPEM, _ := os.ReadFile(filepath.Join(dir, "chain.pem")) // chain may not exist
+
+	return &CertFiles{
+		CertPEM:  string(certPEM),
+		KeyPEM:   string(keyPEM),
+		ChainPEM: string(chainPEM),
+		SHA1:     sha1,
+	}, nil
+}
+
+type CertFiles struct {
+	CertPEM  string
+	KeyPEM   string
+	ChainPEM string
+	SHA1     string
+}
+
 // --- crypto helpers ---
 
 func parsePrivateKey(pemBytes []byte) (any, error) {

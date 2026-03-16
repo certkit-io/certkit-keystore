@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -101,6 +102,61 @@ func serverCertNeedsRotation(certPath string) bool {
 	return time.Until(cert.NotAfter) < rotationWindow
 }
 
+// serverCertSANMismatch returns true if the server cert's SANs don't match
+// the host derived from config.Keystore.BaseUrl.
+func serverCertSANMismatch(certPath string) bool {
+	hosts, err := hostsFromBaseURL(config.CurrentConfig.Keystore.BaseUrl)
+	if err != nil {
+		return true
+	}
+
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return true
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return true
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return true
+	}
+
+	for _, h := range hosts {
+		if ip := net.ParseIP(h); ip != nil {
+			if !containsIP(cert.IPAddresses, ip) {
+				log.Printf("Server cert missing IP SAN %s, will re-issue", h)
+				return true
+			}
+		} else {
+			if !containsString(cert.DNSNames, h) {
+				log.Printf("Server cert missing DNS SAN %s, will re-issue", h)
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func containsIP(ips []net.IP, target net.IP) bool {
+	for _, ip := range ips {
+		if ip.Equal(target) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(strs []string, target string) bool {
+	for _, s := range strs {
+		if s == target {
+			return true
+		}
+	}
+	return false
+}
+
 // TLSManager holds the current server certificate and supports hot-swap
 // rotation via GetCertificate.
 type TLSManager struct {
@@ -125,7 +181,7 @@ func (m *TLSManager) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, e
 func (m *TLSManager) ensureServerCert() error {
 	certPath := filepath.Join(caDir(), serverCertFile)
 
-	if serverCertNeedsRotation(certPath) {
+	if serverCertNeedsRotation(certPath) || serverCertSANMismatch(certPath) {
 		if err := m.issueServerCert(); err != nil {
 			return err
 		}
@@ -217,6 +273,8 @@ func (m *TLSManager) startServer() error {
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-certificate", handleFetchCertificate)
+	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-pfx", handleFetchPfx)
 
 	server := &http.Server{
 		Addr:      ":" + cfg.Keystore.Port,
