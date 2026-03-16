@@ -29,7 +29,7 @@ func runCmd(args []string) {
 
 	log.Printf("CertKit Base URL: %s", cfg.CertkitBaseUrl)
 	if cfg.Keystore != nil {
-		log.Printf("Keystore Base URL: %s", cfg.Keystore.BaseUrl)
+		log.Printf("Keystore Base URL: %s", cfg.Keystore.BaseUrl())
 	}
 
 	if !cfg.Keystore.Initialized {

@@ -103,9 +103,9 @@ func serverCertNeedsRotation(certPath string) bool {
 }
 
 // serverCertSANMismatch returns true if the server cert's SANs don't match
-// the host derived from config.Keystore.BaseUrl.
+// the host derived from config.Keystore.BaseUrl().
 func serverCertSANMismatch(certPath string) bool {
-	hosts, err := hostsFromBaseURL(config.CurrentConfig.Keystore.BaseUrl)
+	hosts, err := hostsFromBaseURL(config.CurrentConfig.Keystore.BaseUrl())
 	if err != nil {
 		return true
 	}
@@ -219,7 +219,7 @@ func (m *TLSManager) issueServerCert() error {
 		return fmt.Errorf("read CA key: %w", err)
 	}
 
-	hosts, err := hostsFromBaseURL(cfg.Keystore.BaseUrl)
+	hosts, err := hostsFromBaseURL(cfg.Keystore.BaseUrl())
 	if err != nil {
 		return fmt.Errorf("extract hosts: %w", err)
 	}

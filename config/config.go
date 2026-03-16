@@ -23,10 +23,17 @@ type Config struct {
 type KeystoreInfo struct {
 	Id            string `json:"id"`
 	ApplicationId string `json:"application_id"`
-	BaseUrl       string `json:"base_url"`
+	Host          string `json:"host"`
 	Port          string `json:"port"`
 	StorageDir    string `json:"storage_dir"`
 	Initialized   bool   `json:"initialized"`
+}
+
+func (k *KeystoreInfo) BaseUrl() string {
+	if k.Port == "443" {
+		return "https://" + k.Host
+	}
+	return "https://" + k.Host + ":" + k.Port
 }
 
 type AuthCreds struct {
@@ -47,7 +54,7 @@ func hasKeyPair(cfg *Config) bool {
 }
 
 const DefaultCertkitBaseUrl = "https://localhost:44301" //"https://app.certkit.io/"
-const DefaultKeystorePort = "8989"
+const DefaultKeystorePort = "443"
 const DefaultStorageDir = "./"
 
 func ParseRegistrationKey(key string) (applicationId string, keystoreId string, err error) {
@@ -58,12 +65,15 @@ func ParseRegistrationKey(key string) (applicationId string, keystoreId string, 
 	return parts[0], parts[1], nil
 }
 
-func CreateInitialConfig(configPath string, registrationKey string, port string, storageDir string) error {
+func CreateInitialConfig(configPath string, registrationKey string, host string, port string, storageDir string) error {
 	if registrationKey == "" {
 		registrationKey = os.Getenv("CERTKIT_REGISTRATION_KEY")
 	}
 	if registrationKey == "" {
 		return fmt.Errorf("registration key is required: pass --key or set CERTKIT_REGISTRATION_KEY")
+	}
+	if host == "" {
+		return fmt.Errorf("host is required: pass --host (e.g. --host keystore.example.com or --host 192.168.1.50)")
 	}
 
 	applicationId, keystoreId, err := ParseRegistrationKey(registrationKey)
@@ -88,7 +98,7 @@ func CreateInitialConfig(configPath string, registrationKey string, port string,
 		Keystore: &KeystoreInfo{
 			Id:            keystoreId,
 			ApplicationId: applicationId,
-			BaseUrl:       fmt.Sprintf("https://localhost:%s", port),
+			Host:          host,
 			Port:          port,
 			StorageDir:    storageDir,
 			Initialized:   false,

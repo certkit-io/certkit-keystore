@@ -11,6 +11,7 @@ func installCmd(args []string) {
 	fs := flag.NewFlagSet("install", flag.ExitOnError)
 	key := fs.String("key", "", "registration key in format {app_id}.{keystore_id} (or set CERTKIT_REGISTRATION_KEY)")
 	configPath := fs.String("config", "config.json", "path to config file")
+	host := fs.String("host", "", "keystore hostname or IP (e.g. keystore.example.com or 192.168.1.50)")
 	port := fs.String("port", config.DefaultKeystorePort, "keystore listen port")
 	storageDir := fs.String("storage-dir", config.DefaultStorageDir, "directory for key storage")
 	fs.Parse(args)
@@ -18,7 +19,7 @@ func installCmd(args []string) {
 	v := Version()
 	log.Printf("certkit-keystore %s (commit: %s, built: %s)", v.Version, v.Commit, v.Date)
 
-	if err := config.CreateInitialConfig(*configPath, *key, *port, *storageDir); err != nil {
+	if err := config.CreateInitialConfig(*configPath, *key, *host, *port, *storageDir); err != nil {
 		log.Fatalf("Install failed: %v", err)
 	}
 

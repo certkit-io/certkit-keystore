@@ -51,7 +51,7 @@ func RegisterKeystore(v config.VersionInfo) (*RegisterKeystoreResponse, error) {
 	req := RegisterKeystoreRequest{
 		RegistrationKey: cfg.Keystore.ApplicationId + "." + cfg.Keystore.Id,
 		PublicKey:        cfg.Auth.KeyPair.PublicKey,
-		KeystoreBaseUrl:  cfg.Keystore.BaseUrl,
+		KeystoreBaseUrl:  cfg.Keystore.BaseUrl(),
 		MachineId:        machineId,
 		Hostname:         hostname,
 		Version:          v.Version,
