@@ -40,8 +40,26 @@ func runCmd(args []string) {
 		log.Println("Registration complete")
 	}
 
+	// Ensure CA certificate exists
+	if err := ensureCA(v); err != nil {
+		log.Fatalf("Failed to ensure CA: %v", err)
+	}
+
+	// Initialize TLS and server certificate
+	tlsMgr, err := newTLSManager()
+	if err != nil {
+		log.Fatalf("Failed to initialize TLS: %v", err)
+	}
+
 	// Run startup checks
 	runStartupChecks(v)
+
+	// Start HTTPS server
+	go func() {
+		if err := tlsMgr.startServer(); err != nil {
+			log.Fatalf("HTTPS server failed: %v", err)
+		}
+	}()
 
 	// Initial poll
 	log.Println("Starting polling loop...")
@@ -55,6 +73,7 @@ func runCmd(args []string) {
 	defer ticker.Stop()
 
 	for range ticker.C {
+		tlsMgr.checkRotation()
 		if resp, err := api.PollForConfiguration(v); err != nil {
 			log.Printf("Poll failed: %v", err)
 		} else {
