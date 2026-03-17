@@ -9,7 +9,14 @@ if (-not (Test-Path $configPath)) {
         Write-Error "Registration key is required"
         exit 1
     }
-    go run ./cmd/certkit-keystore install --key $key --config $configPath --storage-dir $storageDir
+    $keystoreHost = Read-Host "Enter host (e.g. localhost, keystore.example.com)"
+    if (-not $keystoreHost) {
+        Write-Error "Host is required"
+        exit 1
+    }
+    $port = Read-Host "Enter port (default: 443)"
+    if (-not $port) { $port = "443" }
+    go run ./cmd/certkit-keystore install --key $key --host $keystoreHost --port $port --config $configPath --storage-dir $storageDir
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
