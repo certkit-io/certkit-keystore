@@ -48,8 +48,9 @@ type CSRInfo struct {
 	KeyAlgorithm KeyAlgorithm `json:"keyAlgorithm"`
 }
 
-func PollForConfiguration(v config.VersionInfo) (*PollResponse, error) {
+func PollForConfiguration() (*PollResponse, error) {
 	cfg := &config.CurrentConfig
+	v := config.CurrentVersion
 
 	priv, err := cfg.Auth.KeyPair.DecodePrivateKey()
 	if err != nil {

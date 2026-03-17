@@ -29,8 +29,9 @@ type LogKeystoreEventRequest struct {
 	IsError   bool      `json:"isError"`
 }
 
-func LogKeystoreEvent(v config.VersionInfo, message string, eventType EventType, isError bool) error {
+func LogKeystoreEvent(message string, eventType EventType, isError bool) error {
 	cfg := &config.CurrentConfig
+	v := config.CurrentVersion
 
 	priv, err := cfg.Auth.KeyPair.DecodePrivateKey()
 	if err != nil {

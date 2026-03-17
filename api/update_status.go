@@ -39,8 +39,9 @@ type UpdateStatusItem struct {
 	Message      string     `json:"message,omitempty"`
 }
 
-func UpdateStatus(v config.VersionInfo, statuses []UpdateStatusItem) error {
+func UpdateStatus(statuses []UpdateStatusItem) error {
 	cfg := &config.CurrentConfig
+	v := config.CurrentVersion
 
 	priv, err := cfg.Auth.KeyPair.DecodePrivateKey()
 	if err != nil {

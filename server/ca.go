@@ -25,7 +25,7 @@ func caDir() string {
 // EnsureCA checks if a CA cert exists on disk. If not, generates a new
 // ECDSA P-256 CA, saves both cert and key to disk (0600), and sends the
 // CA cert to CertKit via /update-ca-info.
-func EnsureCA(v config.VersionInfo) error {
+func EnsureCA() error {
 	dir := caDir()
 	certPath := filepath.Join(dir, caCertFile)
 	keyPath := filepath.Join(dir, caKeyFile)
@@ -56,7 +56,7 @@ func EnsureCA(v config.VersionInfo) error {
 	}
 	log.Printf("CA certificate and key saved to %s", dir)
 
-	if err := api.UpdateCAInfo(v, certPEM); err != nil {
+	if err := api.UpdateCAInfo(certPEM); err != nil {
 		log.Printf("Warning: failed to send CA cert to CertKit: %v", err)
 	} else {
 		log.Println("CA certificate sent to CertKit")

@@ -18,8 +18,9 @@ type SetCsrRequest struct {
 	CSR          string `json:"csr"`
 }
 
-func SetCSR(v config.VersionInfo, customCertId string, csrPEM string) error {
+func SetCSR(customCertId string, csrPEM string) error {
 	cfg := &config.CurrentConfig
+	v := config.CurrentVersion
 
 	priv, err := cfg.Auth.KeyPair.DecodePrivateKey()
 	if err != nil {

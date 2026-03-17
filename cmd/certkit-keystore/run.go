@@ -43,7 +43,7 @@ func runCmd(args []string) {
 	}
 
 	// Ensure CA certificate exists
-	if err := server.EnsureCA(v); err != nil {
+	if err := server.EnsureCA(); err != nil {
 		log.Fatalf("Failed to ensure CA: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func runCmd(args []string) {
 	}
 
 	// Run startup checks
-	runStartupChecks(v)
+	runStartupChecks()
 
 	// Start HTTPS server
 	go func() {
@@ -65,10 +65,10 @@ func runCmd(args []string) {
 
 	// Initial poll
 	log.Println("Starting polling loop...")
-	if resp, err := api.PollForConfiguration(v); err != nil {
+	if resp, err := api.PollForConfiguration(); err != nil {
 		log.Printf("Initial poll failed: %v", err)
 	} else {
-		processPollResponse(v, resp)
+		processPollResponse(resp)
 	}
 
 	ticker := time.NewTicker(30 * time.Second)
@@ -76,15 +76,15 @@ func runCmd(args []string) {
 
 	for range ticker.C {
 		tlsMgr.CheckRotation()
-		if resp, err := api.PollForConfiguration(v); err != nil {
+		if resp, err := api.PollForConfiguration(); err != nil {
 			log.Printf("Poll failed: %v", err)
 		} else {
-			processPollResponse(v, resp)
+			processPollResponse(resp)
 		}
 	}
 }
 
-func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
+func processPollResponse(resp *api.PollResponse) {
 	var statuses []api.UpdateStatusItem
 
 	for _, cert := range resp.Certificates {
@@ -96,7 +96,7 @@ func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
 			if storage.HasPendingCSR(cert.CustomCertId) {
 				msg := fmt.Sprintf("Creating new CSR for %s even though there is an existing one present", cert.CustomCertId)
 				log.Println(msg)
-				if logErr := api.LogKeystoreEvent(v, msg, api.LogEvents.Info, false); logErr != nil {
+				if logErr := api.LogKeystoreEvent(msg, api.LogEvents.Info, false); logErr != nil {
 					log.Printf("Failed to send log to CertKit: %v", logErr)
 				}
 			}
@@ -114,7 +114,7 @@ func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
 				continue
 			}
 
-			if err := api.SetCSR(v, cert.CustomCertId, csrPEM); err != nil {
+			if err := api.SetCSR(cert.CustomCertId, csrPEM); err != nil {
 				log.Printf("Failed to submit CSR for %s: %v", cert.CustomCertId, err)
 				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()})
 				continue
@@ -171,26 +171,26 @@ func processPollResponse(v config.VersionInfo, resp *api.PollResponse) {
 		}
 	}
 
-	if err := api.UpdateStatus(v, statuses); err != nil {
+	if err := api.UpdateStatus(statuses); err != nil {
 		log.Printf("Failed to send status update to CertKit: %v", err)
 	}
 
 }
 
-func runStartupChecks(v config.VersionInfo) {
+func runStartupChecks() {
 	log.Println("Running startup checks...")
 
 	if err := checkStorageDirWritable(); err != nil {
 		msg := fmt.Sprintf("Storage directory is not writable: %v", err)
 		log.Printf("Startup check FAILED: %s", msg)
-		if logErr := api.LogKeystoreEvent(v, msg, api.LogEvents.Startup, true); logErr != nil {
+		if logErr := api.LogKeystoreEvent(msg, api.LogEvents.Startup, true); logErr != nil {
 			log.Printf("Failed to send startup error to CertKit: %v", logErr)
 		}
 		return
 	}
 
 	log.Println("All startup checks passed")
-	if logErr := api.LogKeystoreEvent(v, "Keystore running.", api.LogEvents.Startup, false); logErr != nil {
+	if logErr := api.LogKeystoreEvent("Keystore running.", api.LogEvents.Startup, false); logErr != nil {
 		log.Printf("Failed to send startup log to CertKit: %v", logErr)
 	}
 }
@@ -226,8 +226,7 @@ func checkStorageDirWritable() error {
 }
 
 func doRegister(cfg *config.Config) error {
-	v := Version()
-	resp, err := api.RegisterKeystore(v)
+	resp, err := api.RegisterKeystore()
 	if err != nil {
 		return fmt.Errorf("register keystore: %w", err)
 	}

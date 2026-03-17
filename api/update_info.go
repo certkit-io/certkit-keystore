@@ -17,8 +17,9 @@ type UpdateKeystoreInfoRequest struct {
 	CACertificate string `json:"caCertificate"`
 }
 
-func UpdateCAInfo(v config.VersionInfo, caCertPEM string) error {
+func UpdateCAInfo(caCertPEM string) error {
 	cfg := &config.CurrentConfig
+	v := config.CurrentVersion
 
 	priv, err := cfg.Auth.KeyPair.DecodePrivateKey()
 	if err != nil {
