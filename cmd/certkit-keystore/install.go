@@ -19,12 +19,18 @@ func installCmd(args []string) {
 	v := Version()
 	log.Printf("certkit-keystore %s (commit: %s, built: %s)", v.Version, v.Commit, v.Date)
 
-	if err := config.CreateInitialConfig(*configPath, *key, *host, *port, *storageDir); err != nil {
-		log.Fatalf("Install failed: %v", err)
+	// If a config already exists and has been initialized, skip creation
+	existing, err := config.ReadConfig(*configPath)
+	if err == nil && existing.Keystore != nil && existing.Keystore.Initialized {
+		log.Printf("Config at %s is already initialized, skipping configuration", *configPath)
+	} else {
+		if err := config.CreateInitialConfig(*configPath, *key, *host, *port, *storageDir); err != nil {
+			log.Fatalf("Install failed: %v", err)
+		}
+		log.Printf("Config written to %s", *configPath)
 	}
 
-	log.Printf("Config written to %s", *configPath)
-
-	// TODO: install as system service (systemd / Windows service)
+	// TODO: install as Windows service
+	// TODO: install as systemd service (Linux)
 	log.Println("Service installation not yet implemented")
 }
