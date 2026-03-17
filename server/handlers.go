@@ -165,7 +165,7 @@ func encodePFX(certFiles *storage.CertFiles, password string) ([]byte, error) {
 		chainData = rest
 	}
 
-	return pkcs12.Modern2023.Encode(privKey, leafCert, chainCerts, password)
+	return pkcs12.LegacyDES.Encode(privKey, leafCert, chainCerts, password)
 }
 
 func parsePrivateKeyDER(der []byte) (any, error) {
