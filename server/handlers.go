@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"crypto/rand"
@@ -15,12 +15,12 @@ import (
 	"software.sslmate.com/src/go-pkcs12"
 )
 
-type FetchCertificateRequest struct {
+type fetchCertificateRequest struct {
 	ConfigurationSqid string `json:"config_id"`
 	CertificateSqid   string `json:"certificate_id"`
 }
 
-type FetchCertificateResponse struct {
+type fetchCertificateResponse struct {
 	CertificatePem  string `json:"certificate_pem"`
 	KeyPem          string `json:"key_pem"`
 	CertificateSha1 string `json:"certificate_sha1"`
@@ -42,7 +42,7 @@ func handleFetchCertificate(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Forward agent signature to CertKit for validation
 
-	var req FetchCertificateRequest
+	var req fetchCertificateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
@@ -63,7 +63,7 @@ func handleFetchCertificate(w http.ResponseWriter, r *http.Request) {
 		fullPEM += "\n" + certFiles.ChainPEM
 	}
 
-	resp := FetchCertificateResponse{
+	resp := fetchCertificateResponse{
 		CertificatePem:  fullPEM,
 		KeyPem:          certFiles.KeyPEM,
 		CertificateSha1: certFiles.SHA1,
@@ -79,7 +79,7 @@ func handleFetchPfx(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Forward agent signature to CertKit for validation
 
-	var req FetchCertificateRequest
+	var req fetchCertificateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return

@@ -11,6 +11,7 @@ import (
 	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
+	"github.com/certkit-io/certkit-keystore/server"
 	"github.com/certkit-io/certkit-keystore/storage"
 )
 
@@ -41,12 +42,12 @@ func runCmd(args []string) {
 	}
 
 	// Ensure CA certificate exists
-	if err := ensureCA(v); err != nil {
+	if err := server.EnsureCA(v); err != nil {
 		log.Fatalf("Failed to ensure CA: %v", err)
 	}
 
 	// Initialize TLS and server certificate
-	tlsMgr, err := newTLSManager()
+	tlsMgr, err := server.NewTLSManager()
 	if err != nil {
 		log.Fatalf("Failed to initialize TLS: %v", err)
 	}
@@ -56,7 +57,7 @@ func runCmd(args []string) {
 
 	// Start HTTPS server
 	go func() {
-		if err := tlsMgr.startServer(); err != nil {
+		if err := tlsMgr.StartServer(); err != nil {
 			log.Fatalf("HTTPS server failed: %v", err)
 		}
 	}()
@@ -73,7 +74,7 @@ func runCmd(args []string) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		tlsMgr.checkRotation()
+		tlsMgr.CheckRotation()
 		if resp, err := api.PollForConfiguration(v); err != nil {
 			log.Printf("Poll failed: %v", err)
 		} else {

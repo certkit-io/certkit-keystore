@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"crypto/tls"
@@ -14,65 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
 )
 
-const (
-	caCertFile     = "ca-cert.pem"
-	caKeyFile      = "ca-key.pem"
-	serverCertFile = "server-cert.pem"
-	serverKeyFile  = "server-key.pem"
-	rotationWindow = 30 * 24 * time.Hour
-)
-
-func caDir() string {
-	return filepath.Join(config.CurrentConfig.Keystore.StorageDir, "ca")
-}
-
-// ensureCA checks if a CA cert exists on disk. If not, generates a new
-// ECDSA P-256 CA, saves both cert and key to disk (0600), and sends the
-// CA cert to CertKit via /update-info.
-func ensureCA(v config.VersionInfo) error {
-	dir := caDir()
-	certPath := filepath.Join(dir, caCertFile)
-	keyPath := filepath.Join(dir, caKeyFile)
-
-	if _, err := os.Stat(certPath); err == nil {
-		if _, err := os.Stat(keyPath); err != nil {
-			return fmt.Errorf("CA cert exists but CA key missing at %s", keyPath)
-		}
-		log.Println("CA certificate already present")
-		return nil
-	}
-
-	log.Println("No CA certificate found, generating...")
-
-	certPEM, keyPEM, err := keystoreCrypto.GenerateCA()
-	if err != nil {
-		return fmt.Errorf("generate CA: %w", err)
-	}
-
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create CA directory: %w", err)
-	}
-	if err := os.WriteFile(certPath, []byte(certPEM), 0o600); err != nil {
-		return fmt.Errorf("write CA cert: %w", err)
-	}
-	if err := os.WriteFile(keyPath, []byte(keyPEM), 0o600); err != nil {
-		return fmt.Errorf("write CA key: %w", err)
-	}
-	log.Printf("CA certificate and key saved to %s", dir)
-
-	if err := api.UpdateCAInfo(v, certPEM); err != nil {
-		log.Printf("Warning: failed to send CA cert to CertKit: %v", err)
-	} else {
-		log.Println("CA certificate sent to CertKit")
-	}
-
-	return nil
-}
+const rotationWindow = 30 * 24 * time.Hour
 
 func hostsFromBaseURL(baseURL string) ([]string, error) {
 	u, err := url.Parse(baseURL)
@@ -164,7 +110,7 @@ type TLSManager struct {
 	cert *tls.Certificate
 }
 
-func newTLSManager() (*TLSManager, error) {
+func NewTLSManager() (*TLSManager, error) {
 	m := &TLSManager{}
 	if err := m.ensureServerCert(); err != nil {
 		return nil, err
@@ -245,8 +191,8 @@ func (m *TLSManager) issueServerCert() error {
 	return nil
 }
 
-// checkRotation re-issues the server leaf cert if it is within 30 days of expiry.
-func (m *TLSManager) checkRotation() {
+// CheckRotation re-issues the server leaf cert if it is within 30 days of expiry.
+func (m *TLSManager) CheckRotation() {
 	certPath := filepath.Join(caDir(), serverCertFile)
 	if !serverCertNeedsRotation(certPath) {
 		return
@@ -264,7 +210,8 @@ func (m *TLSManager) checkRotation() {
 	log.Println("Server certificate rotated successfully")
 }
 
-func (m *TLSManager) startServer() error {
+// StartServer starts the HTTPS server with TLS 1.3 and registers all routes.
+func (m *TLSManager) StartServer() error {
 	cfg := &config.CurrentConfig
 
 	tlsConfig := &tls.Config{
@@ -277,13 +224,12 @@ func (m *TLSManager) startServer() error {
 	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-certificate", handleFetchCertificate)
 	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-pfx", handleFetchPfx)
 
-	server := &http.Server{
+	srv := &http.Server{
 		Addr:      ":" + cfg.Keystore.Port,
 		Handler:   mux,
 		TLSConfig: tlsConfig,
 	}
 
 	log.Printf("Starting HTTPS server on :%s", cfg.Keystore.Port)
-	// Empty cert/key paths: Go uses GetCertificate from TLSConfig
-	return server.ListenAndServeTLS("", "")
+	return srv.ListenAndServeTLS("", "")
 }
