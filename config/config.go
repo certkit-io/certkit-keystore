@@ -13,6 +13,7 @@ import (
 
 var CurrentConfig Config
 var CurrentPath string
+var CurrentVersion VersionInfo
 
 type Config struct {
 	CertkitBaseUrl string        `json:"certkit_base_url"`

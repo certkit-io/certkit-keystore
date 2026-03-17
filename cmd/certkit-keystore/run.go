@@ -21,6 +21,7 @@ func runCmd(args []string) {
 	fs.Parse(args)
 
 	v := Version()
+	config.CurrentVersion = v
 	log.Printf("certkit-keystore %s (commit: %s, built: %s)", v.Version, v.Commit, v.Date)
 
 	cfg, err := config.LoadConfig(*configPath)

@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
 	"net/http"
 
+	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 	"github.com/certkit-io/certkit-keystore/storage"
 	"software.sslmate.com/src/go-pkcs12"
@@ -40,10 +42,20 @@ func handleFetchCertificate(w http.ResponseWriter, r *http.Request) {
 	agentSqid := r.PathValue("agentSqid")
 	log.Printf("fetch-certificate request from agent %s", agentSqid)
 
-	// TODO: Forward agent signature to CertKit for validation
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := api.ValidateAgentRequest(agentSqid, buildAgentRequest(r, bodyBytes)); err != nil {
+		log.Printf("Agent %s validation failed: %v", agentSqid, err)
+		http.Error(w, "agent authorization failed", http.StatusUnauthorized)
+		return
+	}
 
 	var req fetchCertificateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -77,10 +89,20 @@ func handleFetchPfx(w http.ResponseWriter, r *http.Request) {
 	agentSqid := r.PathValue("agentSqid")
 	log.Printf("fetch-pfx request from agent %s", agentSqid)
 
-	// TODO: Forward agent signature to CertKit for validation
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := api.ValidateAgentRequest(agentSqid, buildAgentRequest(r, bodyBytes)); err != nil {
+		log.Printf("Agent %s validation failed: %v", agentSqid, err)
+		http.Error(w, "agent authorization failed", http.StatusUnauthorized)
+		return
+	}
 
 	var req fetchCertificateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -167,4 +189,17 @@ func generatePassword(length int) string {
 		result[i] = chars[n.Int64()]
 	}
 	return string(result)
+}
+
+func buildAgentRequest(r *http.Request, bodyBytes []byte) api.AgentRequest {
+	headers := make(map[string]string)
+	for name, values := range r.Header {
+		headers[name] = values[0]
+	}
+	return api.AgentRequest{
+		Host:    r.Host,
+		Path:    r.URL.RequestURI(),
+		Headers: headers,
+		Body:    string(bodyBytes),
+	}
 }
