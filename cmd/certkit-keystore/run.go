@@ -138,6 +138,9 @@ func processPollResponse(resp *api.PollResponse) {
 				} else {
 					log.Printf("Failed to match CSR key for %s: %v", cert.CustomCertId, cert.LatestIssuedCert)
 				}
+			} else if cert.LatestIssuedCert.Key == "" && keyOnDisk && storage.HasPendingCSR(cert.CustomCertId) {
+				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.PendingCSR})
+				continue
 			}
 
 			wrote, err := storage.EnsureCertOnDisk(cert.CustomCertId, cert.LatestIssuedCert)
