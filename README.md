@@ -2,27 +2,19 @@
 
 CertKit Keystore is a lightweight service that generates and stores private keys on your own infrastructure. It integrates with [CertKit](https://certkit.io) to automate certificate lifecycle management while ensuring that private key material never leaves your environment.
 
-Certificate management platforms typically require you to hand over private keys or generate them in the cloud. CertKit Keystore takes a different approach: keys are generated locally and stay local. CertKit orchestrates the certificate lifecycle, but the keystore is the only component that ever touches private key material.
-
-This means:
-
+## Advantages
 - **Private keys never traverse the network.** CSR generation happens on the keystore; only the public CSR is sent to CertKit.
-- **Your compliance posture improves.** Key material lives on infrastructure you control, under file permissions you set.
-- **Compromise of the CertKit platform does not expose your keys.** There is nothing to exfiltrate because the keys were never there.
+- **Your security posture improves.** Keys live on infrastructure you control. No third parties have access.
+- **CertKit compromise does not expose your keys.** There is nothing to exfiltrate because we never had the keys.
 
 ## Security Model
 
-**Ed25519 request signing.** Every API call from the keystore to CertKit is signed with an Ed25519 keypair generated at install time. The private signing key never leaves the machine.
-
-**TLS 1.3 minimum.** The keystore exposes an HTTPS endpoint for agents to retrieve certificates. It enforces TLS 1.3 with an automatically managed server certificate that rotates before expiry with zero downtime.
-
-**ECDSA P-256 local CA.** The keystore runs its own certificate authority for internal TLS. Server certificates are issued with 90-day lifetimes and rotated automatically at the 60-day mark.
-
-**Restrictive file permissions.** All private key files are written with mode `0600` (owner read/write only). Config files containing signing credentials use the same permissions.
-
-**Machine identity binding.** Each keystore instance reports a stable hardware-derived machine ID, allowing you to cross-reference deployments in the CertKit dashboard.
-
-**Agent request validation.** When a CertKit Agent retrieves a certificate from the keystore, the request is validated against CertKit's API before any key material is served.
+- **Ed25519 request signing.** Every API call from the keystore to CertKit is signed with an Ed25519 keypair generated at install time. The private signing key never leaves the machine.
+- **TLS 1.3 minimum.** The keystore exposes an HTTPS endpoint for agents to retrieve certificates. It enforces TLS 1.3 with an automatically managed server certificate that rotates before expiry with zero downtime.
+- **ECDSA P-256 local CA.** The keystore runs its own certificate authority for internal TLS. Server certificates are issued with 90-day lifetimes and rotated automatically at the 60-day mark.
+- **Restrictive file permissions.** All private key files are written with mode `0600` (owner read/write only). Config files containing signing credentials use the same permissions.
+- **Machine identity binding.** Each keystore instance reports a stable hardware-derived machine ID, allowing you to cross-reference deployments in the CertKit dashboard.
+- **Agent request validation.** When a CertKit Agent retrieves a certificate from the keystore, the request is validated against CertKit's API before any key material is served.
 
 ## Installation
 
