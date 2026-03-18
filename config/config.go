@@ -54,9 +54,9 @@ func hasKeyPair(cfg *Config) bool {
 		cfg.Auth.KeyPair.PrivateKey != ""
 }
 
-const DefaultCertkitBaseUrl = "https://localhost:44301" //"https://app.certkit.io/"
+const DefaultCertkitBaseUrl = "https://app.certkit.io/"
 const DefaultKeystorePort = "443"
-const DefaultStorageDir = "./"
+const DefaultStorageDir = "./certificates"
 
 func ParseRegistrationKey(key string) (applicationId string, keystoreId string, err error) {
 	parts := strings.SplitN(key, ".", 2)
