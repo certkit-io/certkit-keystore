@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -11,21 +10,16 @@ import (
 	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
-	keystoreInstall "github.com/certkit-io/certkit-keystore/install"
 	"github.com/certkit-io/certkit-keystore/server"
 	"github.com/certkit-io/certkit-keystore/storage"
 )
 
-func runCmd(args []string) {
-	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	configPath := fs.String("config", keystoreInstall.DefaultConfigPath, "path to config file")
-	fs.Parse(args)
-
+func runKeystore(configPath string, stopCh <-chan struct{}) {
 	v := Version()
 	config.CurrentVersion = v
 	log.Printf("certkit-keystore %s (commit: %s, built: %s)", v.Version, v.Commit, v.Date)
 
-	cfg, err := config.LoadConfig(*configPath)
+	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
@@ -75,12 +69,18 @@ func runCmd(args []string) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		tlsMgr.CheckRotation()
-		if resp, err := api.PollForConfiguration(); err != nil {
-			log.Printf("Poll failed: %v", err)
-		} else {
-			processPollResponse(resp)
+	for {
+		select {
+		case <-stopCh:
+			log.Printf("received stop signal, shutting down")
+			return
+		case <-ticker.C:
+			tlsMgr.CheckRotation()
+			if resp, err := api.PollForConfiguration(); err != nil {
+				log.Printf("Poll failed: %v", err)
+			} else {
+				processPollResponse(resp)
+			}
 		}
 	}
 }
@@ -178,7 +178,6 @@ func processPollResponse(resp *api.PollResponse) {
 	if err := api.UpdateStatus(statuses); err != nil {
 		log.Printf("Failed to send status update to CertKit: %v", err)
 	}
-
 }
 
 func runStartupChecks() {
