@@ -1,5 +1,7 @@
 # CertKit Keystore
 
+[![CI](https://github.com/certkit-io/certkit-keystore/actions/workflows/ci.yml/badge.svg)](https://github.com/certkit-io/certkit-keystore/actions/workflows/ci.yml) [![Release](https://github.com/certkit-io/certkit-keystore/actions/workflows/release.yml/badge.svg)](https://github.com/certkit-io/certkit-keystore/actions/workflows/release.yml)
+
 CertKit Keystore is a lightweight service that generates and stores private keys on your own infrastructure. It integrates with [CertKit](https://certkit.io) to automate certificate lifecycle management while ensuring that private key material never leaves your environment.
 
 ## Advantages
