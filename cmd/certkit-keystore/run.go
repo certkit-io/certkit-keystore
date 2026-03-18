@@ -11,13 +11,14 @@ import (
 	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
+	keystoreInstall "github.com/certkit-io/certkit-keystore/install"
 	"github.com/certkit-io/certkit-keystore/server"
 	"github.com/certkit-io/certkit-keystore/storage"
 )
 
 func runCmd(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	configPath := fs.String("config", "config.json", "path to config file")
+	configPath := fs.String("config", keystoreInstall.DefaultConfigPath, "path to config file")
 	fs.Parse(args)
 
 	v := Version()
