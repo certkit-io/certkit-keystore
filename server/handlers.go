@@ -30,7 +30,7 @@ type fetchCertificateResponse struct {
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
 	cfg := &config.CurrentConfig
-	fmt.Fprintf(w, "CertKit Keystore v%s\n\n", config.CurrentVersion.Version)
+	fmt.Fprintf(w, "CertKit Keystore %s\n\n", config.CurrentVersion.Version)
 	fmt.Fprintf(w, "Base URL:       %s\n", cfg.Keystore.BaseUrl())
 	fmt.Fprintf(w, "Application ID: %s\n", cfg.Keystore.ApplicationId)
 	fmt.Fprintf(w, "Keystore ID:    %s\n", cfg.Keystore.Id)
