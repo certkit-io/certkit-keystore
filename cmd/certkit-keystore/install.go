@@ -72,7 +72,7 @@ func installCmd(args []string) {
 		}
 
 		fmt.Println()
-		keyVal = promptRequired(reader, "Registration key (from CertKit app, looks like abc.xyz123)", keyVal)
+		keyVal = promptRequired(reader, "Registration key (abc.xyz123)", keyVal)
 		*storageDir = promptOptional(reader, "Storage directory", *storageDir, keystoreInstall.DefaultStorageDir)
 		*host = promptRequired(reader, "Host (hostname or IP)", *host)
 		*port = promptOptional(reader, "Port", *port, config.DefaultKeystorePort)

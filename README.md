@@ -40,7 +40,7 @@ irm https://github.com/certkit-io/certkit-keystore/releases/latest/download/inst
 Both installers download the latest release binary, verify its SHA256 checksum, and run `certkit-keystore install`, which prompts for the required configuration:
 
 ```
-Registration key (from CertKit app, looks like abc.xyz123): myapp.ks01
+Registration key (abc.xyz123): myapp.ks01
 Storage directory [/etc/certkit-keystore/certificates]:
 Host (hostname or IP): keystore.example.com
 Port [443]:
