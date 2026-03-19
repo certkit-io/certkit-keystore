@@ -29,6 +29,7 @@ type RegisterKeystoreRequest struct {
 	PathToConfig     string `json:"path_to_config"`
 	HostType         string `json:"host_type"`
 	StorageDir       string `json:"storageDir"`
+	ServiceName      string `json:"service_name"`
 }
 
 type RegisterKeystoreResponse struct {
@@ -62,6 +63,7 @@ func RegisterKeystore() (*RegisterKeystoreResponse, error) {
 		PathToConfig:     config.CurrentPath,
 		HostType:         utils.DetectHostType(),
 		StorageDir:       cfg.Keystore.StorageDir,
+		ServiceName:      cfg.Keystore.ServiceName,
 	}
 
 	body, err := json.Marshal(req)

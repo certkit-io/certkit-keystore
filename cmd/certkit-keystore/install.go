@@ -79,7 +79,7 @@ func installCmd(args []string) {
 		*configPath = promptOptional(reader, "Config file path", *configPath, keystoreInstall.DefaultConfigPath)
 		fmt.Println()
 
-		if err := config.CreateInitialConfig(*configPath, keyVal, *host, *port, *storageDir); err != nil {
+		if err := config.CreateInitialConfig(*configPath, keyVal, *host, *port, *storageDir, keystoreInstall.ServiceName); err != nil {
 			log.Fatalf("Install failed: %v", err)
 		}
 		log.Printf("Config written to %s", *configPath)

@@ -27,6 +27,7 @@ type KeystoreInfo struct {
 	Host          string `json:"host"`
 	Port          string `json:"port"`
 	StorageDir    string `json:"storage_dir"`
+	ServiceName   string `json:"service_name"`
 	Initialized   bool   `json:"initialized"`
 }
 
@@ -66,7 +67,7 @@ func ParseRegistrationKey(key string) (applicationId string, keystoreId string, 
 	return parts[0], parts[1], nil
 }
 
-func CreateInitialConfig(configPath string, registrationKey string, host string, port string, storageDir string) error {
+func CreateInitialConfig(configPath string, registrationKey string, host string, port string, storageDir string, serviceName string) error {
 	if registrationKey == "" {
 		registrationKey = os.Getenv("CERTKIT_REGISTRATION_KEY")
 	}
@@ -102,6 +103,7 @@ func CreateInitialConfig(configPath string, registrationKey string, host string,
 			Host:          host,
 			Port:          port,
 			StorageDir:    storageDir,
+			ServiceName:   serviceName,
 			Initialized:   false,
 		},
 	}
