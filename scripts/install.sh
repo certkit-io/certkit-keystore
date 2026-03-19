@@ -59,7 +59,7 @@ install -m 0755 "$tmp/${ASSET_BIN}" "${INSTALL_DIR}/${BIN_NAME}"
 echo ""
 echo "Running certkit-keystore install..."
 echo ""
-"${INSTALL_DIR}/${BIN_NAME}" install
+"${INSTALL_DIR}/${BIN_NAME}" install </dev/tty
 
 if [[ $FIRST_INSTALL -eq 0 ]]; then
   if command -v systemctl >/dev/null 2>&1; then
