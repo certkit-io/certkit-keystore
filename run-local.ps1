@@ -7,7 +7,7 @@ $keystoreHost = "host.docker.internal"
 $port = 8989
 
 if (-not (Test-Path $configPath)) {
-    go run ./cmd/certkit-keystore install --host $keystoreHost --port $port --config $configPath --storage-dir $storageDir
+    go run ./cmd/certkit-keystore install --host $keystoreHost --port $port --config $configPath --storage-dir $storageDir --no-service
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

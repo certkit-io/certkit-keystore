@@ -53,6 +53,7 @@ func installCmd(args []string) {
 	host := fs.String("host", "", "keystore hostname or IP (e.g. keystore.example.com or 192.168.1.50)")
 	port := fs.String("port", config.DefaultKeystorePort, "keystore listen port")
 	storageDir := fs.String("storage-dir", keystoreInstall.DefaultStorageDir, "directory for key storage")
+	noService := fs.Bool("no-service", os.Getenv("KEYSTORE_NO_SERVICE") != "", "skip service creation/update")
 	fs.Parse(args)
 
 	v := Version()
@@ -85,5 +86,9 @@ func installCmd(args []string) {
 		log.Printf("Config written to %s", *configPath)
 	}
 
-	keystoreInstall.InstallService(*configPath)
+	if *noService {
+		log.Println("Skipping service install (--no-service)")
+	} else {
+		keystoreInstall.InstallService(*configPath)
+	}
 }
