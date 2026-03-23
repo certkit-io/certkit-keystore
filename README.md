@@ -18,6 +18,12 @@ CertKit Keystore is a lightweight service that generates and stores private keys
 - **Machine identity binding.** Each keystore instance reports a stable hardware-derived machine ID, allowing you to cross-reference deployments in the CertKit dashboard.
 - **Agent request validation.** When a CertKit Agent retrieves a certificate from the keystore, the request is validated against CertKit's API before any key material is served.
 
+## Keystore Prerequisites
+
+- **A machine to host it.** Supply a server or VM to host the keystore.
+- **URL that agents will talk to.** Know the domain/IP and port that agents will connect to the keystore on.
+- **Storage directory.** Provide a folder path where the certificates are stored.
+
 ## Installation
 
 ### Linux
