@@ -99,6 +99,42 @@ func mustBeRoot() {
 	}
 }
 
+func UninstallService() {
+	mustBeRoot()
+
+	unitName := ServiceName + ".service"
+	unitPath := filepath.Join(DefaultUnitPath, unitName)
+
+	if _, err := os.Stat(unitPath); os.IsNotExist(err) {
+		log.Printf("Service %s is not installed; nothing to remove", ServiceName)
+		return
+	}
+
+	if _, err := exec.LookPath("systemctl"); err == nil {
+		if err := runCmdLogged("systemctl", "stop", unitName); err != nil {
+			log.Printf("systemctl stop failed for %s: %v", unitName, err)
+		}
+		if err := runCmdLogged("systemctl", "disable", unitName); err != nil {
+			log.Printf("systemctl disable failed for %s: %v", unitName, err)
+		}
+	}
+
+	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
+		log.Fatalf("failed to remove unit file %s: %v", unitPath, err)
+	}
+
+	if _, err := exec.LookPath("systemctl"); err == nil {
+		if err := runCmdLogged("systemctl", "daemon-reload"); err != nil {
+			log.Printf("systemctl daemon-reload failed: %v", err)
+		}
+		if err := runCmdLogged("systemctl", "reset-failed", unitName); err != nil {
+			log.Printf("systemctl reset-failed failed for %s: %v", unitName, err)
+		}
+	}
+
+	log.Printf("Service %s has been removed", ServiceName)
+}
+
 func runCmdLogged(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	var out bytes.Buffer

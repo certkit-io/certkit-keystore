@@ -34,6 +34,8 @@ func main() {
 	switch os.Args[1] {
 	case "install":
 		installCmd(os.Args[2:])
+	case "uninstall":
+		uninstallCmd(os.Args[2:])
 	case "run":
 		runCmd(os.Args[2:])
 	default:
@@ -54,6 +56,9 @@ func usageAndExit() {
 	fmt.Fprintf(os.Stderr, "  Examples:\n")
 	fmt.Fprintf(os.Stderr, "    certkit-keystore install --key xdnt.4v93kfts --host keystore.example.com\n")
 	fmt.Fprintf(os.Stderr, "    certkit-keystore install --key xdnt.4v93kfts --host 192.168.1.50 --port 8989\n")
+	fmt.Fprintf(os.Stderr, "\n")
+	fmt.Fprintf(os.Stderr, "  uninstall   Stop and remove the system service\n")
+	fmt.Fprintf(os.Stderr, "    --config        Path to config file (default: %s)\n", keystoreInstall.DefaultConfigPath)
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "  run         Run in foreground (debug mode)\n")
 	fmt.Fprintf(os.Stderr, "    --config        Path to config file (default: %s)\n", keystoreInstall.DefaultConfigPath)
