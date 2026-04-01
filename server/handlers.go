@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"strings"
 
 	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
@@ -35,7 +36,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Application ID: %s\n", cfg.Keystore.ApplicationId)
 	fmt.Fprintf(w, "Keystore ID:    %s\n", cfg.Keystore.Id)
 	fmt.Fprintf(w, "Storage Dir:    %s\n\n", cfg.Keystore.StorageDir)
-	fmt.Fprintf(w, "Management URL: %s\n", fmt.Sprintf("%s/app/%s/keystore", cfg.CertkitBaseUrl, cfg.Keystore.ApplicationId))
+	fmt.Fprintf(w, "Management URL: %s\n", fmt.Sprintf("%s/app/%s/keystore", strings.TrimRight(cfg.CertkitBaseUrl, "/"), cfg.Keystore.ApplicationId))
 }
 
 func handleFetchCertificate(w http.ResponseWriter, r *http.Request) {
