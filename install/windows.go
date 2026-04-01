@@ -112,6 +112,40 @@ func InstallService(configPath string) {
 	log.Printf("   Get-Service %s", ServiceName)
 }
 
+func UninstallService() {
+	mustBeAdmin()
+
+	manager, err := mgr.Connect()
+	if err != nil {
+		log.Fatalf("failed to connect to service manager: %v", err)
+	}
+	defer manager.Disconnect()
+
+	svcObj, err := manager.OpenService(ServiceName)
+	if err != nil {
+		if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
+			log.Printf("Service %s is not installed; nothing to remove", ServiceName)
+		} else {
+			log.Fatalf("failed to open service %s: %v", ServiceName, err)
+		}
+	} else {
+		defer svcObj.Close()
+		if err := stopWindowsService(svcObj); err != nil {
+			log.Printf("Warning: failed to stop service %s: %v", ServiceName, err)
+		}
+		if err := svcObj.Delete(); err != nil {
+			log.Fatalf("failed to delete service %s: %v", ServiceName, err)
+		}
+		log.Printf("Deleted service %s", ServiceName)
+	}
+
+	if err := removeWindowsEventLogSource(); err != nil {
+		log.Printf("Warning: failed to remove Windows Event Log source %q: %v", windowsEventLogSource, err)
+	}
+
+	log.Printf("Service %s has been removed", ServiceName)
+}
+
 func configureRecovery(s *mgr.Service) error {
 	return s.SetRecoveryActions([]mgr.RecoveryAction{
 		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
