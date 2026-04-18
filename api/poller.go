@@ -41,6 +41,7 @@ type KeyAlgorithm string
 const (
 	KeyAlgorithmEC256   KeyAlgorithm = "EC256"
 	KeyAlgorithmRSA2048 KeyAlgorithm = "RSA2048"
+	KeyAlgorithmRSA4096 KeyAlgorithm = "RSA4096"
 )
 
 type CSRInfo struct {
