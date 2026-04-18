@@ -20,6 +20,8 @@ func GenerateCSR(sans []string, keyAlgorithm string) (csrPEM string, keyPEM stri
 		privKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	case "RSA2048":
 		privKey, err = rsa.GenerateKey(rand.Reader, 2048)
+	case "RSA4096":
+		privKey, err = rsa.GenerateKey(rand.Reader, 4096)
 	default:
 		return "", "", fmt.Errorf("unsupported key algorithm: %s", keyAlgorithm)
 	}
