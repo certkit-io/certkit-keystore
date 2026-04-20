@@ -69,7 +69,7 @@ All flags can also be passed non-interactively for automated deployments. The re
 
 1. **Install.** The keystore registers with CertKit using a one-time registration key and generates an Ed25519 signing keypair.
 2. **Poll.** Every 30 seconds, the keystore polls CertKit for pending CSR requests and issued certificates.
-3. **Generate.** When a CSR is requested, the keystore generates a private key locally (ECDSA P-256 or RSA 2048) and submits only the CSR.
+3. **Generate.** When a CSR is requested, the keystore generates a private key locally (ECDSA P-256, ECDSA P-384, RSA 2048, or RSA 4096) and submits only the CSR.
 4. **Store.** Issued certificates are written to disk alongside their locally generated keys. Status is reported back to CertKit.
 5. **Serve.** CertKit Agents retrieve certificates from the keystore over HTTPS. Each request is authenticated through CertKit before key material is released.
 

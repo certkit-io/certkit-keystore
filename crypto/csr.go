@@ -12,15 +12,26 @@ import (
 	"fmt"
 )
 
-func GenerateCSR(sans []string, keyAlgorithm string) (csrPEM string, keyPEM string, err error) {
+type KeyAlgorithm string
+
+const (
+	KeyAlgorithmEC256   KeyAlgorithm = "EC256"
+	KeyAlgorithmEC384   KeyAlgorithm = "EC384"
+	KeyAlgorithmRSA2048 KeyAlgorithm = "RSA2048"
+	KeyAlgorithmRSA4096 KeyAlgorithm = "RSA4096"
+)
+
+func GenerateCSR(sans []string, keyAlgorithm KeyAlgorithm) (csrPEM string, keyPEM string, err error) {
 	var privKey crypto.Signer
 
 	switch keyAlgorithm {
-	case "EC256":
+	case KeyAlgorithmEC256:
 		privKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	case "RSA2048":
+	case KeyAlgorithmEC384:
+		privKey, err = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	case KeyAlgorithmRSA2048:
 		privKey, err = rsa.GenerateKey(rand.Reader, 2048)
-	case "RSA4096":
+	case KeyAlgorithmRSA4096:
 		privKey, err = rsa.GenerateKey(rand.Reader, 4096)
 	default:
 		return "", "", fmt.Errorf("unsupported key algorithm: %s", keyAlgorithm)

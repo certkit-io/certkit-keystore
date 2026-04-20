@@ -102,7 +102,7 @@ func processPollResponse(resp *api.PollResponse) {
 				}
 			}
 
-			csrPEM, keyPEM, err := keystoreCrypto.GenerateCSR(cert.CSR.SANs, string(cert.CSR.KeyAlgorithm))
+			csrPEM, keyPEM, err := keystoreCrypto.GenerateCSR(cert.CSR.SANs, cert.CSR.KeyAlgorithm)
 			if err != nil {
 				log.Printf("Failed to generate CSR for %s: %v", cert.CustomCertId, err)
 				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()})
