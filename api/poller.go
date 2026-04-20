@@ -11,6 +11,7 @@ import (
 
 	"github.com/certkit-io/certkit-keystore/auth"
 	"github.com/certkit-io/certkit-keystore/config"
+	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
 )
 
 type PollRequest struct{}
@@ -36,17 +37,9 @@ type IssuedCert struct {
 	IssueDate    time.Time `json:"issueDate"`
 }
 
-type KeyAlgorithm string
-
-const (
-	KeyAlgorithmEC256   KeyAlgorithm = "EC256"
-	KeyAlgorithmRSA2048 KeyAlgorithm = "RSA2048"
-	KeyAlgorithmRSA4096 KeyAlgorithm = "RSA4096"
-)
-
 type CSRInfo struct {
-	SANs         []string     `json:"sans"`
-	KeyAlgorithm KeyAlgorithm `json:"keyAlgorithm"`
+	SANs         []string                    `json:"sans"`
+	KeyAlgorithm keystoreCrypto.KeyAlgorithm `json:"keyAlgorithm"`
 }
 
 func PollForConfiguration() (*PollResponse, error) {
