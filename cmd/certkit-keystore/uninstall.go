@@ -32,7 +32,7 @@ func uninstallCmd(args []string) {
 	}
 
 	fmt.Println()
-	keystoreInstall.UninstallService()
+	keystoreInstall.UninstallService(*configPath)
 
 	if err := os.Remove(*configPath); err != nil {
 		if os.IsNotExist(err) {
