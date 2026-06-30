@@ -58,6 +58,8 @@ func InstallService(configPath string) {
 
 	log.Printf("Installed and started %s (unit: %s)", ServiceName, unitPath)
 	log.Printf("   systemctl status %s.service", ServiceName)
+
+	openFirewallForConfig(configPath)
 }
 
 func renderSystemdUnit(exePath, configPath string) string {
@@ -99,8 +101,10 @@ func mustBeRoot() {
 	}
 }
 
-func UninstallService() {
+func UninstallService(configPath string) {
 	mustBeRoot()
+
+	closeFirewallForConfig(configPath)
 
 	unitName := ServiceName + ".service"
 	unitPath := filepath.Join(DefaultUnitPath, unitName)
