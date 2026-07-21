@@ -11,6 +11,9 @@ REPO="certkit-keystore"
 BIN_NAME="certkit-keystore"
 INSTALL_DIR="/usr/local/bin"
 
+# Github is blocked on many customer networks, so downloads go through the CertKit github proxy
+GITHUB_PROXY_BASE="${GITHUB_PROXY_BASE:-https://app.certkit.io}"
+
 FIRST_INSTALL=0
 if [[ ! -f "${INSTALL_DIR}/${BIN_NAME}" ]]; then
   FIRST_INSTALL=1
@@ -25,7 +28,7 @@ if [[ -n "${VERSION:-}" ]]; then
   TAG="$VERSION"
 else
   TAG="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-    "https://github.com/${OWNER}/${REPO}/releases/latest" | sed -n 's#.*/tag/##p')"
+    "${GITHUB_PROXY_BASE}/github-proxy/${OWNER}/${REPO}/releases/latest" | sed -n 's#.*/tag/##p')"
   if [[ -z "$TAG" ]]; then
     echo "Failed to determine latest release tag" >&2
     exit 1
@@ -36,7 +39,7 @@ echo "Using release tag: ${TAG}"
 
 ASSET_BIN="${BIN_NAME}-linux-amd64"
 ASSET_SHA="checksums.txt"
-BASE_URL="https://github.com/${OWNER}/${REPO}/releases/download/${TAG}"
+BASE_URL="${GITHUB_PROXY_BASE}/github-proxy/${OWNER}/${REPO}/releases/download/${TAG}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
