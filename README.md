@@ -29,20 +29,20 @@ CertKit Keystore is a lightweight service that generates and stores private keys
 ### Linux
 
 ```bash
-curl -fsSL https://github.com/certkit-io/certkit-keystore/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://app.certkit.io/keystore/latest/install.sh | sudo bash
 ```
 
 Or with a registration key pre-set:
 
 ```bash
 export CERTKIT_REGISTRATION_KEY=appid.keystoreid
-curl -fsSL https://github.com/certkit-io/certkit-keystore/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://app.certkit.io/keystore/latest/install.sh | sudo bash
 ```
 
 ### Windows (PowerShell, elevated)
 
 ```powershell
-irm https://github.com/certkit-io/certkit-keystore/releases/latest/download/install.ps1 | iex
+irm https://app.certkit.io/keystore/latest/install.ps1 | iex
 ```
 
 Both installers download the latest release binary, verify its SHA256 checksum, and run `certkit-keystore install`, which prompts for the required configuration:
@@ -55,7 +55,17 @@ Port [443]:
 Config file path [/etc/certkit-keystore/config.json]:
 ```
 
-The service is registered and started automatically (systemd on Linux, Windows Service on Windows).
+The service is registered and started automatically (systemd on Linux, Windows Service on Windows). On Windows the script installs the service with the signed MSI; pass `-Binary` to use the raw binary install instead.
+
+### Windows MSI
+
+`certkit-keystore-windows-amd64.msi` is attached to every release. Double-click it for a setup wizard, or install silently:
+
+```powershell
+msiexec /i certkit-keystore-windows-amd64.msi /qn REGISTRATIONKEY=myapp.ks01 HOST=keystore.example.com
+```
+
+Optional properties: `PORT` (default `443`) and `STORAGEDIR` (default `C:\ProgramData\CertKit\certkit-keystore\certificates`). These are only needed on first install; running a newer MSI upgrades in place and keeps the existing configuration. Uninstalling removes the service, firewall rule, and config file, but never the stored certificates.
 
 ### Manual Install
 
@@ -72,6 +82,10 @@ All flags can also be passed non-interactively for automated deployments. The re
 3. **Generate.** When a CSR is requested, the keystore generates a private key locally (ECDSA P-256, ECDSA P-384, RSA 2048, or RSA 4096) and submits only the CSR.
 4. **Store.** Issued certificates are written to disk alongside their locally generated keys. Status is reported back to CertKit.
 5. **Serve.** CertKit Agents retrieve certificates from the keystore over HTTPS. Each request is authenticated through CertKit before key material is released.
+
+### Automatic Updates
+
+When CertKit signals that a new release is available, the keystore downloads the new binary, verifies its SHA256 checksum, swaps it into place, and exits so the service manager (systemd or the Windows SCM) restarts it on the new version. Keystores running in containers are not self-updated.
 
 ## Configuration
 

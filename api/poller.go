@@ -17,7 +17,16 @@ import (
 type PollRequest struct{}
 
 type PollResponse struct {
-	Certificates []PollCertificate `json:"certificates"`
+	Certificates    []PollCertificate `json:"certificates"`
+	UpdateAvailable *UpdateSignal     `json:"updateAvailable,omitempty"`
+}
+
+// UpdateSignal tells the keystore a newer release is available. DownloadURL
+// points at the binary for this keystore's platform; SHA256 is its hex digest.
+type UpdateSignal struct {
+	Version     string `json:"version"`
+	DownloadURL string `json:"downloadUrl"`
+	SHA256      string `json:"sha256"`
 }
 
 type PollCertificate struct {

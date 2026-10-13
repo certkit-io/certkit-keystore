@@ -36,6 +36,10 @@ func main() {
 		installCmd(os.Args[2:])
 	case "uninstall":
 		uninstallCmd(os.Args[2:])
+	case "bootstrap-config":
+		bootstrapConfigCmd(os.Args[2:])
+	case "msi-cleanup":
+		msiCleanupCmd(os.Args[2:])
 	case "run":
 		runCmd(os.Args[2:])
 	default:
@@ -62,5 +66,7 @@ func usageAndExit() {
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "  run         Run in foreground (debug mode)\n")
 	fmt.Fprintf(os.Stderr, "    --config        Path to config file (default: %s)\n", keystoreInstall.DefaultConfigPath)
+	fmt.Fprintf(os.Stderr, "\n")
+	fmt.Fprintf(os.Stderr, "  bootstrap-config, msi-cleanup   Used by the Windows MSI installer\n")
 	os.Exit(1)
 }

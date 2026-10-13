@@ -111,13 +111,13 @@ func InstallService(configPath string) {
 	log.Printf("Installed and started service %s", ServiceName)
 	log.Printf("   Get-Service %s", ServiceName)
 
-	openFirewallForConfig(configPath)
+	OpenFirewallForConfig(configPath)
 }
 
 func UninstallService(configPath string) {
 	mustBeAdmin()
 
-	closeFirewallForConfig(configPath)
+	CloseFirewallForConfig(configPath)
 
 	manager, err := mgr.Connect()
 	if err != nil {

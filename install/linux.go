@@ -3,7 +3,6 @@
 package install
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -59,7 +58,7 @@ func InstallService(configPath string) {
 	log.Printf("Installed and started %s (unit: %s)", ServiceName, unitPath)
 	log.Printf("   systemctl status %s.service", ServiceName)
 
-	openFirewallForConfig(configPath)
+	OpenFirewallForConfig(configPath)
 }
 
 func renderSystemdUnit(exePath, configPath string) string {
@@ -104,7 +103,7 @@ func mustBeRoot() {
 func UninstallService(configPath string) {
 	mustBeRoot()
 
-	closeFirewallForConfig(configPath)
+	CloseFirewallForConfig(configPath)
 
 	unitName := ServiceName + ".service"
 	unitPath := filepath.Join(DefaultUnitPath, unitName)
@@ -137,19 +136,4 @@ func UninstallService(configPath string) {
 	}
 
 	log.Printf("Service %s has been removed", ServiceName)
-}
-
-func runCmdLogged(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	err := cmd.Run()
-	if out.Len() > 0 {
-		log.Printf("Ran command: %s %s:\n%s", name, strings.Join(args, " "), strings.TrimSpace(out.String()))
-	}
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(out.String()))
-	}
-	return nil
 }

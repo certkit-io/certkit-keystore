@@ -10,6 +10,7 @@ import (
 	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
+	"github.com/certkit-io/certkit-keystore/selfupdate"
 	"github.com/certkit-io/certkit-keystore/server"
 	"github.com/certkit-io/certkit-keystore/storage"
 )
@@ -81,11 +82,23 @@ func runKeystore(configPath string, stopCh <-chan struct{}) {
 			} else {
 				processPollResponse(resp)
 			}
+			if selfupdate.HandleUpdateIfNeeded() {
+				selfupdate.TriggerRestart()
+			}
 		}
 	}
 }
 
 func processPollResponse(resp *api.PollResponse) {
+	if resp.UpdateAvailable != nil {
+		selfupdate.SignalUpdateAvailable(
+			config.CurrentVersion.Version,
+			resp.UpdateAvailable.Version,
+			resp.UpdateAvailable.DownloadURL,
+			resp.UpdateAvailable.SHA256,
+		)
+	}
+
 	var statuses []api.UpdateStatusItem
 
 	for _, cert := range resp.Certificates {

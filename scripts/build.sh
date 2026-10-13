@@ -24,6 +24,25 @@ echo ""
 rm -rf "${DIST_DIR}"
 mkdir -p "${DIST_DIR}/bin"
 
+# Windows resources (.syso): icon + VERSIONINFO + manifest. The generated file
+# is suffixed _windows_amd64 so only the windows build links it.
+# Accept X.Y.Z or a prerelease tag X.Y.Z-<suffix>, but NOT git-describe
+# output (1.1.0-35-gabc123[-dirty]) - dev builds keep 0.0.0.
+BASE="${VERSION#v}"
+VER_NUMERIC="0.0.0"
+if echo "$BASE" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$' &&
+   ! echo "$BASE" | grep -Eq -- '-[0-9]+-g[0-9a-f]+(-dirty)?$' &&
+   ! echo "$BASE" | grep -Eq -- '-dirty$'; then
+  VER_NUMERIC="$(echo "$BASE" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')"
+fi
+echo "Generating Windows resources (go-winres, version ${VER_NUMERIC})..."
+go run github.com/tc-hib/go-winres@v0.3.3 make \
+  --in winres/winres.json \
+  --arch amd64 \
+  --product-version "$VER_NUMERIC" \
+  --file-version "$VER_NUMERIC" \
+  --out cmd/certkit-keystore/rsrc
+
 export CGO_ENABLED=0
 
 # Build Linux amd64
@@ -34,12 +53,20 @@ GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "${LDFLAGS}" -o "${DIST_DIR}
 echo "Building windows/amd64..."
 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "${LDFLAGS}" -o "${DIST_DIR}/bin/${BINARY_NAME}-windows-amd64.exe" ${CMD_PATH}
 
-# Generate checksums
-echo ""
-echo "Generating checksums..."
-cd "${DIST_DIR}/bin"
-sha256sum * > ../checksums.txt
-cat ../checksums.txt
+# In CI, checksums are generated in the release job AFTER code signing
+# (signing changes the file hashes). Locally they are still handy.
+if [ "${SKIP_CHECKSUMS:-0}" = "1" ]; then
+  echo ""
+  echo "Skipping checksums (SKIP_CHECKSUMS=1)"
+else
+  echo ""
+  echo "Generating checksums..."
+  (
+    cd "${DIST_DIR}/bin"
+    sha256sum * > ../checksums.txt
+  )
+  cat "${DIST_DIR}/checksums.txt"
+fi
 
 echo ""
 echo "Build complete. Binaries in ${DIST_DIR}/bin/"

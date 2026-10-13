@@ -23,11 +23,11 @@ func validateFirewallPort(port string) error {
 	return nil
 }
 
-// openFirewallForConfig reads the listen port from the config file and opens it
+// OpenFirewallForConfig reads the listen port from the config file and opens it
 // in the host firewall so CertKit agents can reach the keystore. Any failure is
 // logged as a warning and never aborts the install (the service is already up;
 // an admin can open the port by hand).
-func openFirewallForConfig(configPath string) {
+func OpenFirewallForConfig(configPath string) {
 	cfg, err := config.ReadConfig(configPath)
 	if err != nil {
 		log.Printf("Warning: could not read config to open firewall: %v", err)
@@ -42,11 +42,11 @@ func openFirewallForConfig(configPath string) {
 	}
 }
 
-// closeFirewallForConfig removes the firewall rule that openFirewallForConfig
+// CloseFirewallForConfig removes the firewall rule that OpenFirewallForConfig
 // added. The port is read from config when available (Linux needs it to delete
 // the matching rule); Windows removes by rule name and ignores it. Failures are
 // logged as warnings and never abort the uninstall.
-func closeFirewallForConfig(configPath string) {
+func CloseFirewallForConfig(configPath string) {
 	port := ""
 	if cfg, err := config.ReadConfig(configPath); err == nil && cfg.Keystore != nil {
 		port = cfg.Keystore.Port

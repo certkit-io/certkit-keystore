@@ -2,16 +2,15 @@
 
 package install
 
-import (
-	"fmt"
-
-	"github.com/certkit-io/certkit-keystore/utils"
-)
-
 // firewallRuleDisplayName is the stable name of the Windows Firewall rule. Using
 // a fixed name lets us remove the rule on uninstall without knowing the port,
 // and makes re-installs idempotent (we remove-then-add).
 const firewallRuleDisplayName = "CertKit Keystore"
+
+// The rule is managed with netsh rather than PowerShell: this also runs from
+// the MSI's custom actions, and AV heuristics flag installer-spawned
+// PowerShell. netsh's name= matches the rule's display name, so rules created
+// by earlier (New-NetFirewallRule) installs are replaced as well.
 
 // openFirewallPort opens the given inbound TCP port in Windows Firewall so
 // CertKit agents can reach the keystore. Any rule with the same display name is
@@ -21,20 +20,23 @@ func openFirewallPort(port string) error {
 		return err
 	}
 
-	script := fmt.Sprintf(
-		"Remove-NetFirewallRule -DisplayName '%s' -ErrorAction SilentlyContinue; "+
-			"New-NetFirewallRule -DisplayName '%s' -Direction Inbound -Action Allow -Protocol TCP -LocalPort %s | Out-Null",
-		firewallRuleDisplayName, firewallRuleDisplayName, port,
+	// netsh exits non-zero when no rule matches, which is the common case here.
+	_ = deleteFirewallRule()
+	return runCmdLogged("netsh", "advfirewall", "firewall", "add", "rule",
+		"name="+firewallRuleDisplayName,
+		"dir=in",
+		"action=allow",
+		"protocol=TCP",
+		"localport="+port,
 	)
-	return utils.RunPowerShellLogged(script)
 }
 
 // closeFirewallPort removes the rule added by openFirewallPort. The rule is
 // removed by display name, so the port argument is unused on Windows.
 func closeFirewallPort(_ string) error {
-	script := fmt.Sprintf(
-		"Remove-NetFirewallRule -DisplayName '%s' -ErrorAction SilentlyContinue",
-		firewallRuleDisplayName,
-	)
-	return utils.RunPowerShellLogged(script)
+	return deleteFirewallRule()
+}
+
+func deleteFirewallRule() error {
+	return runCmdLogged("netsh", "advfirewall", "firewall", "delete", "rule", "name="+firewallRuleDisplayName)
 }
