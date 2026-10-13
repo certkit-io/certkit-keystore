@@ -19,6 +19,11 @@ import (
 // Set by SignalUpdateAvailable, consumed by HandleUpdateIfNeeded.
 var pendingUpdate *updateSignal
 
+// rejectedVersion is a version whose binary failed signature verification.
+// The server announces it on every poll, and downloading it again would only
+// fail again.
+var rejectedVersion string
+
 type updateSignal struct {
 	Version     string
 	DownloadURL string
@@ -32,7 +37,7 @@ func SignalUpdateAvailable(currentVersion, version, downloadURL, sha256hex strin
 	if version == "" || downloadURL == "" || sha256hex == "" {
 		return
 	}
-	if version == currentVersion {
+	if version == currentVersion || version == rejectedVersion {
 		return
 	}
 	if pendingUpdate != nil && pendingUpdate.Version == version {
@@ -75,6 +80,13 @@ func HandleUpdateIfNeeded() bool {
 
 	if err := downloadAndVerify(signal.DownloadURL, signal.SHA256, stagingPath); err != nil {
 		log.Printf("Self-update: download failed: %v", err)
+		os.Remove(stagingPath)
+		return false
+	}
+
+	if err := verifyUpdateSignature(stagingPath); err != nil {
+		log.Printf("Self-update: rejecting version %s: %v", signal.Version, err)
+		rejectedVersion = signal.Version
 		os.Remove(stagingPath)
 		return false
 	}

@@ -87,6 +87,8 @@ All flags can also be passed non-interactively for automated deployments. The re
 
 When CertKit signals that a new release is available, the keystore downloads the new binary, verifies its SHA256 checksum, swaps it into place, and exits so the service manager (systemd or the Windows SCM) restarts it on the new version. Keystores running in containers are not self-updated.
 
+On Windows the update must also carry a valid Authenticode signature from the same publisher that signed the running keystore; otherwise it is rejected and the current version keeps running. Unsigned builds therefore never update themselves.
+
 ## Configuration
 
 The keystore is configured via a JSON file created during installation. Default locations:

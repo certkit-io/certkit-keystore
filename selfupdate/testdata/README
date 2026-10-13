@@ -1,0 +1,4 @@
+ev-signed-file.exe is copied unmodified from golang.org/x/sys/windows/testdata
+(BSD-3-Clause, Copyright 2009 The Go Authors). It is a tiny "Hello Gophers!"
+program with a timestamped Authenticode signature from WireGuard LLC, used to
+exercise signature verification against a publisher other than CertKit's.

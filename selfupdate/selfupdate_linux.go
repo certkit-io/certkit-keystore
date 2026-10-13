@@ -27,6 +27,12 @@ func replaceBinary(newPath string) error {
 	return nil
 }
 
+// verifyUpdateSignature is a no-op: Linux release binaries are not signed, so
+// the SHA256 announced by the server is the only check.
+func verifyUpdateSignature(path string) error {
+	return nil
+}
+
 // TriggerRestart exits the process so systemd Restart=always restarts it with the new binary.
 func TriggerRestart() {
 	log.Printf("Self-update applied. Exiting for service manager restart...")
