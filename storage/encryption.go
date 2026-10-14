@@ -30,6 +30,15 @@ func SetEncryptionKey(key []byte) error {
 	return nil
 }
 
+// EncryptionKeyID returns the Kid of the loaded encryption key, or "" if no
+// key is loaded.
+func EncryptionKeyID() string {
+	if encryptionKey == nil {
+		return ""
+	}
+	return keystoreCrypto.KeyID(encryptionKey)
+}
+
 // WritePrivateKey encrypts a plaintext private key PEM and writes it to path.
 // Plaintext is never written: without an encryption key this fails.
 func WritePrivateKey(path string, plaintextPEM []byte) error {

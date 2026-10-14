@@ -10,10 +10,8 @@ import (
 	"log"
 	"math/big"
 	"net/http"
-	"strings"
 
 	"github.com/certkit-io/certkit-keystore/api"
-	"github.com/certkit-io/certkit-keystore/config"
 	"github.com/certkit-io/certkit-keystore/storage"
 	"software.sslmate.com/src/go-pkcs12"
 )
@@ -27,16 +25,6 @@ type fetchCertificateResponse struct {
 	CertificatePem  string `json:"certificate_pem"`
 	KeyPem          string `json:"key_pem"`
 	CertificateSha1 string `json:"certificate_sha1"`
-}
-
-func handleRoot(w http.ResponseWriter, r *http.Request) {
-	cfg := &config.CurrentConfig
-	fmt.Fprintf(w, "CertKit Keystore %s\n\n", config.CurrentVersion.Version)
-	fmt.Fprintf(w, "Base URL:       %s\n", cfg.Keystore.BaseUrl())
-	fmt.Fprintf(w, "Application ID: %s\n", cfg.Keystore.ApplicationId)
-	fmt.Fprintf(w, "Keystore ID:    %s\n", cfg.Keystore.Id)
-	fmt.Fprintf(w, "Storage Dir:    %s\n\n", cfg.Keystore.StorageDir)
-	fmt.Fprintf(w, "Management URL: %s\n", fmt.Sprintf("%s/app/%s/keystore", strings.TrimRight(cfg.CertkitBaseUrl, "/"), cfg.Keystore.ApplicationId))
 }
 
 func handleFetchCertificate(w http.ResponseWriter, r *http.Request) {

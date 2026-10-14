@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,10 @@ import (
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
 )
+
+// ErrKeystoreUnauthorized means CertKit refused the poll because the keystore
+// hasn't been authorized in the CertKit web application.
+var ErrKeystoreUnauthorized = errors.New("keystore unauthorized (403)")
 
 type PollRequest struct{}
 
@@ -100,7 +105,7 @@ func PollForConfiguration() (*PollResponse, error) {
 		}
 		return &result, nil
 	case http.StatusForbidden:
-		return nil, fmt.Errorf("keystore unauthorized (403)")
+		return nil, ErrKeystoreUnauthorized
 	default:
 		return nil, fmt.Errorf("poll failed: status=%d body=%s", resp.StatusCode, string(respBody))
 	}

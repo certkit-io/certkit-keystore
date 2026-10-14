@@ -88,6 +88,7 @@ func runKeystore(configPath string, stopCh <-chan struct{}) {
 	log.Println("Starting polling loop...")
 	if resp, err := api.PollForConfiguration(); err != nil {
 		log.Printf("Initial poll failed: %v", err)
+		server.RecordPollFailure(err)
 	} else {
 		processPollResponse(resp)
 	}
@@ -104,6 +105,7 @@ func runKeystore(configPath string, stopCh <-chan struct{}) {
 			tlsMgr.CheckRotation()
 			if resp, err := api.PollForConfiguration(); err != nil {
 				log.Printf("Poll failed: %v", err)
+				server.RecordPollFailure(err)
 			} else {
 				processPollResponse(resp)
 			}
@@ -216,6 +218,7 @@ func processPollResponse(resp *api.PollResponse) {
 	if err := api.UpdateStatus(statuses); err != nil {
 		log.Printf("Failed to send status update to CertKit: %v", err)
 	}
+	server.RecordPoll(resp, statuses)
 }
 
 func runStartupChecks(movedAside string, migration storage.MigrationResult) {
