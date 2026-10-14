@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/x509"
@@ -10,13 +11,33 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 )
 
+// CertInfo identifies the latest issued cert. The PEMs live in the cert's
+// SHA1 directory; nothing secret is stored here. The JSON names match
+// api.IssuedCert, so metadata written by older versions still parses.
+type CertInfo struct {
+	Id           int       `json:"id"`
+	SHA1         string    `json:"sha1"`
+	SHA256       string    `json:"sha256"`
+	SerialNumber string    `json:"serialNumber"`
+	IssueDate    time.Time `json:"issueDate"`
+}
+
 type CertMetadata struct {
-	LatestCert *api.IssuedCert `json:"latestCert"`
+	LatestCert *CertInfo `json:"latestCert"`
+}
+
+func marshalMetadata(meta CertMetadata) ([]byte, error) {
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshal metadata: %w", err)
+	}
+	return data, nil
 }
 
 // --- path helpers ---
@@ -53,6 +74,17 @@ func writeFileIfMissing(path string, content []byte) (bool, error) {
 	return true, nil
 }
 
+// writeKeyIfMissing encrypts and writes key.pem if it doesn't exist yet.
+func writeKeyIfMissing(path string, keyPEM []byte) (bool, error) {
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	}
+	if err := WritePrivateKey(path, keyPEM); err != nil {
+		return false, fmt.Errorf("could not write %s: %w", path, err)
+	}
+	return true, nil
+}
+
 // --- public API ---
 
 // EnsureCertOnDisk checks if cert.pem, chain.pem, and key.pem exist for the
@@ -69,9 +101,6 @@ func EnsureCertOnDisk(customCertId string, cert *api.IssuedCert) (bool, error) {
 		"cert.pem":  cert.PEM,
 		"chain.pem": cert.Chain,
 	}
-	if cert.Key != "" {
-		files["key.pem"] = cert.Key
-	}
 
 	wrote := false
 	for name, content := range files {
@@ -84,43 +113,57 @@ func EnsureCertOnDisk(customCertId string, cert *api.IssuedCert) (bool, error) {
 		}
 	}
 
+	if cert.Key != "" {
+		w, err := writeKeyIfMissing(filepath.Join(dir, "key.pem"), []byte(cert.Key))
+		if err != nil {
+			return false, err
+		}
+		if w {
+			wrote = true
+		}
+	}
+
 	return wrote, nil
 }
 
-// IsKeyOnDisk checks if key.pem exists in the cert's SHA1 directory.
-// Returns (true, nil) if found, (false, error) if not.
+// IsKeyOnDisk checks that key.pem exists in the cert's SHA1 directory and can
+// be decrypted. Returns (true, nil) if so, (false, error) if not.
 func IsKeyOnDisk(customCertId string, sha1 string) (bool, error) {
 	path := filepath.Join(issuedCertDir(customCertId, sha1), "key.pem")
 	if _, err := os.Stat(path); err != nil {
 		return false, fmt.Errorf("key not found at %s", path)
 	}
+	if err := CheckPrivateKey(path); err != nil {
+		return false, fmt.Errorf("key at %s could not be read: %w", path, err)
+	}
 	return true, nil
 }
 
-// EnsureMetadata writes or updates metadata.json if the latest cert SHA1
-// doesn't match what's on disk.
+// EnsureMetadata writes or updates metadata.json if it doesn't already
+// describe the latest cert in the current (slim) format.
 func EnsureMetadata(customCertId string, cert *api.IssuedCert) (bool, error) {
 	path := metadataPath(customCertId)
 
-	if data, err := os.ReadFile(path); err == nil {
-		var existing CertMetadata
-		if err := json.Unmarshal(data, &existing); err == nil {
-			if existing.LatestCert != nil && existing.LatestCert.SHA1 == cert.SHA1 {
-				return false, nil
-			}
-		}
+	data, err := marshalMetadata(CertMetadata{LatestCert: &CertInfo{
+		Id:           cert.Id,
+		SHA1:         cert.SHA1,
+		SHA256:       cert.SHA256,
+		SerialNumber: cert.SerialNumber,
+		IssueDate:    cert.IssueDate,
+	}})
+	if err != nil {
+		return false, err
+	}
+
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, data) {
+		return false, nil
 	}
 
 	if err := ensureDir(certRootDir(customCertId)); err != nil {
 		return false, fmt.Errorf("create directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(CertMetadata{LatestCert: cert}, "", "  ")
-	if err != nil {
-		return false, fmt.Errorf("marshal metadata: %w", err)
-	}
-
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := writeFileAtomic(path, data); err != nil {
 		return false, fmt.Errorf("write metadata: %w", err)
 	}
 
@@ -138,7 +181,7 @@ func HasPendingCSR(customCertId string) bool {
 // directory as key.pem, and removes the csr/ directory.
 func MatchAndAdoptCSRKey(customCertId string, cert *api.IssuedCert) (bool, error) {
 	cDir := csrDir(customCertId)
-	keyPEMBytes, err := os.ReadFile(filepath.Join(cDir, "key.pem"))
+	keyPEMBytes, err := ReadPrivateKey(filepath.Join(cDir, "key.pem"))
 	if err != nil {
 		return false, fmt.Errorf("read csr key: %w", err)
 	}
@@ -163,7 +206,7 @@ func MatchAndAdoptCSRKey(customCertId string, cert *api.IssuedCert) (bool, error
 		return false, fmt.Errorf("create cert directory: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(iDir, "key.pem"), keyPEMBytes, 0o600); err != nil {
+	if err := WritePrivateKey(filepath.Join(iDir, "key.pem"), keyPEMBytes); err != nil {
 		return false, fmt.Errorf("write key.pem: %w", err)
 	}
 
@@ -192,7 +235,7 @@ func SaveCSR(customCertId string, csrPEM string, keyPEM string) error {
 		return fmt.Errorf("write csr.pem: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "key.pem"), []byte(keyPEM), 0o600); err != nil {
+	if err := WritePrivateKey(filepath.Join(dir, "key.pem"), []byte(keyPEM)); err != nil {
 		return fmt.Errorf("write key.pem: %w", err)
 	}
 
@@ -223,7 +266,7 @@ func ReadLatestCert(customCertId string) (*CertFiles, error) {
 		return nil, fmt.Errorf("read cert.pem: %w", err)
 	}
 
-	keyPEM, err := os.ReadFile(filepath.Join(dir, "key.pem"))
+	keyPEM, err := ReadPrivateKey(filepath.Join(dir, "key.pem"))
 	if err != nil {
 		return nil, fmt.Errorf("read key.pem: %w", err)
 	}

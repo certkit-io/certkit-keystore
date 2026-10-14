@@ -26,6 +26,8 @@ go.work.sum
 
 # Build output
 dist/
+# Generated Windows resources (scripts/build.*)
+*.syso
 
 # env file
 .env

@@ -16,6 +16,7 @@ import (
 
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
+	"github.com/certkit-io/certkit-keystore/storage"
 )
 
 const rotationWindow = 30 * 24 * time.Hour
@@ -140,7 +141,16 @@ func (m *TLSManager) loadServerCert() error {
 	certPath := filepath.Join(caDir(), serverCertFile)
 	keyPath := filepath.Join(caDir(), serverKeyFile)
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("read server cert: %w", err)
+	}
+	keyPEM, err := storage.ReadPrivateKey(keyPath)
+	if err != nil {
+		return fmt.Errorf("read server key: %w", err)
+	}
+
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return fmt.Errorf("load server cert: %w", err)
 	}
@@ -160,7 +170,7 @@ func (m *TLSManager) issueServerCert() error {
 		return fmt.Errorf("read CA cert: %w", err)
 	}
 
-	caKeyPEM, err := os.ReadFile(filepath.Join(caDir(), caKeyFile))
+	caKeyPEM, err := storage.ReadPrivateKey(filepath.Join(caDir(), caKeyFile))
 	if err != nil {
 		return fmt.Errorf("read CA key: %w", err)
 	}
@@ -183,7 +193,7 @@ func (m *TLSManager) issueServerCert() error {
 	if err := os.WriteFile(filepath.Join(dir, serverCertFile), []byte(certPEM), 0o600); err != nil {
 		return fmt.Errorf("write server cert: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, serverKeyFile), []byte(keyPEM), 0o600); err != nil {
+	if err := storage.WritePrivateKey(filepath.Join(dir, serverKeyFile), []byte(keyPEM)); err != nil {
 		return fmt.Errorf("write server key: %w", err)
 	}
 

@@ -38,6 +38,31 @@ func runKeystore(configPath string, stopCh <-chan struct{}) {
 		log.Println("Registration complete")
 	}
 
+	// Private keys are encrypted at rest with a key held by CertKit. Nothing
+	// that reads or writes keys can run until it arrives.
+	encryptionKey, ok := waitForEncryptionKey(stopCh)
+	if !ok {
+		log.Printf("received stop signal, shutting down")
+		return
+	}
+	if err := storage.SetEncryptionKey(encryptionKey); err != nil {
+		log.Fatalf("Invalid encryption key: %v", err)
+	}
+	log.Printf("Encryption key loaded (kid %s)", keystoreCrypto.KeyID(encryptionKey))
+
+	// Keys encrypted with a different key belong to an earlier registration
+	// of this keystore and can never be read: start over with an empty
+	// storage directory.
+	movedAside, err := storage.StartOverIfUnreadable()
+	if err != nil {
+		log.Fatalf("Failed to set aside unreadable storage directory: %v", err)
+	}
+
+	migration := storage.MigrateToEncrypted()
+	if migration.MetadataCleaned > 0 {
+		log.Printf("Removed certificate and key copies from %d metadata.json files", migration.MetadataCleaned)
+	}
+
 	// Ensure CA certificate exists
 	if err := server.EnsureCA(); err != nil {
 		log.Fatalf("Failed to ensure CA: %v", err)
@@ -50,7 +75,7 @@ func runKeystore(configPath string, stopCh <-chan struct{}) {
 	}
 
 	// Run startup checks
-	runStartupChecks()
+	runStartupChecks(movedAside, migration)
 
 	// Start HTTPS server
 	go func() {
@@ -193,21 +218,78 @@ func processPollResponse(resp *api.PollResponse) {
 	}
 }
 
-func runStartupChecks() {
+func runStartupChecks(movedAside string, migration storage.MigrationResult) {
 	log.Println("Running startup checks...")
+	passed := true
+
+	if movedAside != "" {
+		reportStartupFailure(fmt.Sprintf("Stored private keys were encrypted by an earlier registration of this keystore and cannot be read. "+
+			"Moved the storage directory to %s and started over. Keys CertKit holds will be downloaded again; "+
+			"certificates that used keystore-generated CSRs must be reissued.", movedAside))
+		passed = false
+	}
+
+	if migration.Encrypted > 0 {
+		msg := fmt.Sprintf("Encrypted %d existing private key(s) at rest.", migration.Encrypted)
+		log.Println(msg)
+		if logErr := api.LogKeystoreEvent(msg, api.LogEvents.Startup, false); logErr != nil {
+			log.Printf("Failed to send startup log to CertKit: %v", logErr)
+		}
+	}
+	if n := len(migration.Failed); n > 0 {
+		for _, err := range migration.Failed {
+			log.Printf("Encryption at rest migration error: %v", err)
+		}
+		reportStartupFailure(fmt.Sprintf("Failed to encrypt %d private key file(s) at rest: %v", n, migration.Failed[0]))
+		passed = false
+	}
 
 	if err := checkStorageDirWritable(); err != nil {
-		msg := fmt.Sprintf("Storage directory is not writable: %v", err)
-		log.Printf("Startup check FAILED: %s", msg)
-		if logErr := api.LogKeystoreEvent(msg, api.LogEvents.Startup, true); logErr != nil {
-			log.Printf("Failed to send startup error to CertKit: %v", logErr)
-		}
+		reportStartupFailure(fmt.Sprintf("Storage directory is not writable: %v", err))
 		return
 	}
 
-	log.Println("All startup checks passed")
+	if passed {
+		log.Println("All startup checks passed")
+	}
 	if logErr := api.LogKeystoreEvent("Keystore running.", api.LogEvents.Startup, false); logErr != nil {
 		log.Printf("Failed to send startup log to CertKit: %v", logErr)
+	}
+}
+
+func reportStartupFailure(msg string) {
+	log.Printf("Startup check FAILED: %s", msg)
+	if logErr := api.LogKeystoreEvent(msg, api.LogEvents.Startup, true); logErr != nil {
+		log.Printf("Failed to send startup error to CertKit: %v", logErr)
+	}
+}
+
+// encryptionKeyRetryDelays is the wait between attempts to fetch the
+// encryption key; the last delay repeats.
+var encryptionKeyRetryDelays = []time.Duration{
+	5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second,
+}
+
+// fetchEncryptionKey is replaced in tests.
+var fetchEncryptionKey = api.FetchEncryptionKey
+
+// waitForEncryptionKey fetches the keystore's encryption key from CertKit,
+// retrying until it succeeds. It returns false if stopCh closes first.
+func waitForEncryptionKey(stopCh <-chan struct{}) ([]byte, bool) {
+	for attempt := 0; ; attempt++ {
+		key, err := fetchEncryptionKey()
+		if err == nil {
+			return key, true
+		}
+
+		delay := encryptionKeyRetryDelays[min(attempt, len(encryptionKeyRetryDelays)-1)]
+		log.Printf("Waiting for encryption key from CertKit: %v (retrying in %s)", err, delay)
+
+		select {
+		case <-stopCh:
+			return nil, false
+		case <-time.After(delay):
+		}
 	}
 }
 
