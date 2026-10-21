@@ -22,8 +22,18 @@ var ErrKeystoreUnauthorized = errors.New("keystore unauthorized (403)")
 type PollRequest struct{}
 
 type PollResponse struct {
-	Certificates    []PollCertificate `json:"certificates"`
-	UpdateAvailable *UpdateSignal     `json:"updateAvailable,omitempty"`
+	Collections []PollCollection `json:"collections"`
+	// SigningRequests are private CA operations waiting for this keystore.
+	SigningRequests []SigningRequest `json:"signingRequests"`
+	UpdateAvailable *UpdateSignal    `json:"updateAvailable,omitempty"`
+}
+
+// PollCollection is a CertKit collection that uses this keystore, with the
+// certificates the keystore stores for it.
+type PollCollection struct {
+	Id           string            `json:"id"`
+	Name         string            `json:"name"`
+	Certificates []PollCertificate `json:"certificates"`
 }
 
 // UpdateSignal tells the keystore a newer release is available. DownloadURL
@@ -71,7 +81,7 @@ func PollForConfiguration() (*PollResponse, error) {
 	}
 
 	url := strings.TrimRight(cfg.CertkitBaseUrl, "/") +
-		"/api/keystore/v1/" + cfg.Keystore.Id + "/poll"
+		"/api/keystore/v2/" + cfg.Keystore.Id + "/poll"
 
 	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {

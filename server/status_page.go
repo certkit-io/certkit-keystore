@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,17 +31,32 @@ import (
 
 // --- poll state ---
 
-// pollState is what the status page knows about the poll loop. Its slice and
+// pollState is what the status page knows about the poll loop. Its slices and
 // map are replaced on every poll, never modified, so copies can share them.
 type pollState struct {
 	LastAttempt time.Time
 	LastSuccess time.Time
 	Err         error
-	// CertIds are the certificates CertKit sent in the last successful poll,
-	// in its order, and Statuses what the keystore reported for each.
-	CertIds       []string
+	// Collections are the collections CertKit sent in the last successful
+	// poll, in its order, and Statuses what the keystore reported for each of
+	// their certificates, by certificate ID.
+	Collections   []pollCollection
 	Statuses      map[string]api.UpdateStatusItem
 	UpdateVersion string
+}
+
+type pollCollection struct {
+	Id      string
+	Name    string
+	CertIds []string
+}
+
+func (p pollState) certCount() int {
+	n := 0
+	for _, c := range p.Collections {
+		n += len(c.CertIds)
+	}
+	return n
 }
 
 var (
@@ -52,9 +68,13 @@ var (
 // RecordPoll notes a successful poll: the certificates CertKit sent and the
 // status reported for each.
 func RecordPoll(resp *api.PollResponse, statuses []api.UpdateStatusItem) {
-	ids := make([]string, 0, len(resp.Certificates))
-	for _, cert := range resp.Certificates {
-		ids = append(ids, cert.CustomCertId)
+	collections := make([]pollCollection, 0, len(resp.Collections))
+	for _, c := range resp.Collections {
+		ids := make([]string, 0, len(c.Certificates))
+		for _, cert := range c.Certificates {
+			ids = append(ids, cert.CustomCertId)
+		}
+		collections = append(collections, pollCollection{Id: c.Id, Name: c.Name, CertIds: ids})
 	}
 	byId := make(map[string]api.UpdateStatusItem, len(statuses))
 	for _, s := range statuses {
@@ -68,7 +88,7 @@ func RecordPoll(resp *api.PollResponse, statuses []api.UpdateStatusItem) {
 	now := time.Now()
 	pollMu.Lock()
 	defer pollMu.Unlock()
-	lastPoll = pollState{LastAttempt: now, LastSuccess: now, CertIds: ids, Statuses: byId, UpdateVersion: update}
+	lastPoll = pollState{LastAttempt: now, LastSuccess: now, Collections: collections, Statuses: byId, UpdateVersion: update}
 }
 
 // RecordPollFailure notes a failed poll. What the last successful poll
@@ -107,9 +127,19 @@ type statusPage struct {
 	PollError     string
 	Unauthorized  bool
 	UpdateVersion string
-	Certs         []certRow
+	Groups        []certGroup
+	PrivateCAs    []caRow
 	Sections      []section
 	Generated     string
+}
+
+// certGroup is one box of certificates: a collection CertKit sent, or the
+// stored certificates it didn't. Empty is shown when there are none.
+type certGroup struct {
+	Title string
+	URL   string
+	Certs []certRow
+	Empty string
 }
 
 type health struct {
@@ -133,6 +163,18 @@ type certRow struct {
 	Key         string
 	KeyNote     string
 	KeyClass    string
+}
+
+// caRow is a private CA whose key the keystore holds for CertKit.
+type caRow struct {
+	Name     string
+	ID       string
+	URL      string
+	Kind     string
+	Expires  *when
+	Key      string
+	KeyNote  string
+	KeyClass string
 }
 
 type when struct {
@@ -198,17 +240,18 @@ func buildStatusPage(now time.Time) statusPage {
 	if err != nil {
 		log.Printf("Status page: failed to list storage directory: %v", err)
 	}
-	certs := certRows(poll, stored, now)
+	groups := certGroups(poll, stored, now)
 
 	page := statusPage{
 		Version:       config.CurrentVersion,
 		CertkitURL:    certkitBaseURL(),
-		ManagementURL: certkitBaseURL() + "/app/" + cfg.Keystore.ApplicationId + "/keystore",
+		ManagementURL: certkitBaseURL() + "/settings/keystore",
 		Port:          cfg.Keystore.Port,
 		Uptime:        formatUptime(now.Sub(startedAt)),
-		Health:        pageHealth(poll, certs),
+		Health:        pageHealth(poll, groups),
 		UpdateVersion: poll.UpdateVersion,
-		Certs:         certs,
+		Groups:        groups,
+		PrivateCAs:    privateCARows(now),
 		Generated:     formatTime(now),
 	}
 	if !poll.LastAttempt.IsZero() {
@@ -220,7 +263,7 @@ func buildStatusPage(now time.Time) statusPage {
 	}
 
 	page.Sections = []section{
-		keystoreSection(),
+		keystoreSection(poll),
 		certkitSection(poll, now),
 		trustSection(now),
 		hostSection(now),
@@ -228,7 +271,7 @@ func buildStatusPage(now time.Time) statusPage {
 	return page
 }
 
-func pageHealth(poll pollState, certs []certRow) health {
+func pageHealth(poll pollState, groups []certGroup) health {
 	switch {
 	case errors.Is(poll.Err, api.ErrKeystoreUnauthorized):
 		return health{"Not authorized in CertKit", "bad"}
@@ -239,9 +282,11 @@ func pageHealth(poll pollState, certs []certRow) health {
 	}
 
 	bad := 0
-	for _, c := range certs {
-		if c.StatusClass == "bad" {
-			bad++
+	for _, g := range groups {
+		for _, c := range g.Certs {
+			if c.StatusClass == "bad" {
+				bad++
+			}
 		}
 	}
 	switch {
@@ -255,44 +300,125 @@ func pageHealth(poll pollState, certs []certRow) health {
 
 // --- certificates ---
 
-// certRows lists the certificates CertKit sent in the last poll, then any
-// others found in the storage directory.
-func certRows(poll pollState, stored []storage.StoredCert, now time.Time) []certRow {
-	byId := make(map[string]storage.StoredCert, len(stored))
+// certGroups lists the collections CertKit sent in the last poll with their
+// certificates, then any other certificates in the storage directory.
+func certGroups(poll pollState, stored []storage.StoredCert, now time.Time) []certGroup {
+	type location struct{ collectionId, certId string }
+	byLocation := make(map[location]storage.StoredCert, len(stored))
 	for _, sc := range stored {
-		byId[sc.CustomCertId] = sc
+		byLocation[location{sc.CollectionId, sc.CustomCertId}] = sc
 	}
+	shown := make(map[location]bool, len(stored))
 
-	var rows []certRow
-	inPoll := make(map[string]bool, len(poll.CertIds))
-	for _, id := range poll.CertIds {
-		inPoll[id] = true
-		sc, ok := byId[id]
-		if !ok {
-			sc = storage.StoredCert{CustomCertId: id}
+	var groups []certGroup
+	for _, c := range poll.Collections {
+		group := certGroup{
+			Title: c.Name,
+			URL:   certkitBaseURL() + "/app/" + c.Id + "/keystore",
+			Empty: "No certificates in this collection yet.",
 		}
-		row := certRowFor(sc, now)
-		if s, ok := poll.Statuses[id]; ok {
-			row.Status, row.StatusClass, row.Pending = statusLabel(s.Status)
-			if row.StatusClass == "bad" {
-				row.Message = s.Message
+		if group.Title == "" {
+			group.Title = c.Id
+		}
+		for _, id := range c.CertIds {
+			// Look where storage.ReadLatestCert does: the collection
+			// directory, then where keystores before v2 stored it.
+			loc := location{c.Id, id}
+			sc, ok := byLocation[loc]
+			if !ok {
+				loc = location{"", id}
+				sc, ok = byLocation[loc]
 			}
-		} else {
-			row.Status, row.StatusClass = "Not Issued", "ok"
+			if ok {
+				shown[loc] = true
+			} else {
+				sc = storage.StoredCert{CustomCertId: id}
+			}
+
+			row := certRowFor(c.Id, sc, now)
+			if s, ok := poll.Statuses[id]; ok {
+				row.Status, row.StatusClass, row.Pending = statusLabel(s.Status)
+				if row.StatusClass == "bad" {
+					row.Message = s.Message
+				}
+			} else {
+				row.Status, row.StatusClass = "Not Issued", "ok"
+			}
+			group.Certs = append(group.Certs, row)
 		}
-		rows = append(rows, row)
+		groups = append(groups, group)
 	}
 
+	other := certGroup{Title: "Other Stored Certificates"}
 	for _, sc := range stored {
-		if inPoll[sc.CustomCertId] {
+		if shown[location{sc.CollectionId, sc.CustomCertId}] {
 			continue
 		}
-		row := certRowFor(sc, now)
+		row := certRowFor(sc.CollectionId, sc, now)
 		if poll.LastSuccess.IsZero() {
 			row.Status = "Waiting for CertKit"
 		} else {
 			row.Status = "Not in CertKit"
 			row.Message = "CertKit no longer sends this certificate to the keystore."
+		}
+		other.Certs = append(other.Certs, row)
+	}
+
+	if poll.LastSuccess.IsZero() {
+		// Which collections the keystore serves isn't known until CertKit answers.
+		other.Title = "Certificate Storage"
+		other.Empty = "No certificates yet. Certificates you assign to this keystore in CertKit will show up here."
+		return []certGroup{other}
+	}
+	if len(groups) == 0 {
+		groups = append(groups, certGroup{
+			Title: "Certificate Storage",
+			Empty: "No collections use this keystore yet. Collections you add to the keystore in CertKit will show up here.",
+		})
+	}
+	if len(other.Certs) > 0 {
+		groups = append(groups, other)
+	}
+	return groups
+}
+
+// privateCARows lists the private CA keys in the storage directory, named and
+// dated from the CA's certificate (or, before it has one, its CSR).
+func privateCARows(now time.Time) []caRow {
+	cas, err := storage.ListPrivateCAs()
+	if err != nil {
+		log.Printf("Status page: failed to list private CAs: %v", err)
+	}
+
+	var rows []caRow
+	for _, ca := range cas {
+		row := caRow{Name: ca.Id, ID: ca.Id, URL: certkitBaseURL() + "/settings/certificate-authorities/" + ca.Id}
+		var pub any
+		if cert, err := parseCertPEM(ca.CertPEM); err == nil {
+			if cert.Subject.CommonName != "" {
+				row.Name = cert.Subject.CommonName
+			}
+			pub = cert.PublicKey
+			row.Expires = expiry(cert.NotAfter, now)
+			row.Kind = "issuing CA"
+			if bytes.Equal(cert.RawSubject, cert.RawIssuer) {
+				row.Kind = "root CA"
+			}
+		} else if csr, err := parseCSRPEM(ca.CSRPEM); err == nil {
+			if csr.Subject.CommonName != "" {
+				row.Name = csr.Subject.CommonName
+			}
+			pub = csr.PublicKey
+			row.Kind = "awaiting certificate"
+		}
+
+		switch {
+		case !ca.KeyStored:
+			row.Key, row.KeyClass = "Missing", "bad"
+		case ca.KeyEncrypted:
+			row.Key, row.KeyNote = keyAlgorithm(pub), "encrypted at rest"
+		default:
+			row.Key, row.KeyNote, row.KeyClass = keyAlgorithm(pub), "not encrypted", "ok"
 		}
 		rows = append(rows, row)
 	}
@@ -314,12 +440,16 @@ func statusLabel(status api.CertStatus) (label, class string, pending bool) {
 	}
 }
 
-func certRowFor(sc storage.StoredCert, now time.Time) certRow {
+// certRowFor describes a stored certificate. collectionId is the collection
+// it belongs to, or "" if unknown (stored before v2 and not sent by CertKit).
+func certRowFor(collectionId string, sc storage.StoredCert, now time.Time) certRow {
 	row := certRow{
 		Name:     sc.CustomCertId,
 		ID:       sc.CustomCertId,
-		URL:      certkitBaseURL() + "/app/" + config.CurrentConfig.Keystore.ApplicationId + "/certificates/" + sc.CustomCertId,
 		Versions: sc.Versions,
+	}
+	if collectionId != "" {
+		row.URL = certkitBaseURL() + "/app/" + collectionId + "/certificates/" + sc.CustomCertId
 	}
 	if sc.Latest != nil {
 		row.SHA1 = strings.ToUpper(sc.Latest.SHA1)
@@ -425,8 +555,12 @@ func parseCSRPEM(data []byte) (*x509.CertificateRequest, error) {
 
 // --- detail sections ---
 
-func keystoreSection() section {
+func keystoreSection(poll pollState) section {
 	k := config.CurrentConfig.Keystore
+	collections := field{Label: "Collections"}
+	if !poll.LastSuccess.IsZero() {
+		collections.Value = strconv.Itoa(len(poll.Collections))
+	}
 	return section{Title: "Keystore", Fields: []field{
 		{Label: "Base URL", Value: k.BaseUrl()},
 		{Label: "Port", Value: k.Port},
@@ -434,7 +568,8 @@ func keystoreSection() section {
 		{Label: "Config", Value: absPath(config.CurrentPath)},
 		{Label: "Service", Value: k.ServiceName},
 		{Label: "Keystore ID", Value: k.Id},
-		{Label: "App ID", Value: k.ApplicationId},
+		{Label: "Account", Value: k.AccountId},
+		collections,
 	}}
 }
 
@@ -487,7 +622,7 @@ func certkitSection(poll pollState, now time.Time) section {
 		s.Fields = append(s.Fields, success)
 	}
 	if !poll.LastSuccess.IsZero() {
-		s.Fields = append(s.Fields, field{Label: "Assigned", Value: plural(len(poll.CertIds), "certificate")})
+		s.Fields = append(s.Fields, field{Label: "Assigned", Value: plural(poll.certCount(), "certificate")})
 	}
 
 	enc := field{Label: "Encryption", Value: "Key not loaded", Class: "bad"}

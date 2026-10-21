@@ -125,7 +125,7 @@ tbody tr:last-child > * { border-bottom: 0; }
 .scroll { overflow-x: auto; }
 .certs .dotcell { width: 26px; padding-right: 0; padding-top: 14px; }
 .certs .name { color: var(--heading); font-weight: 700; text-decoration: none; overflow-wrap: anywhere; }
-.certs .name:hover { color: var(--primary); text-decoration: underline; }
+.certs a.name:hover { color: var(--primary); text-decoration: underline; }
 .certs .exp, .certs .key { white-space: nowrap; }
 .sub { margin-top: 2px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .empty { margin: 0; color: var(--muted); }
@@ -188,7 +188,7 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
   <div class="alert">
     {{if .Unauthorized}}
     <strong>This keystore isn't authorized yet.</strong>
-    Authorize it on the <a href="{{.ManagementURL}}">keystore page in CertKit</a>.
+    Authorize it in the <a href="{{.ManagementURL}}">keystore settings in CertKit</a>.
     {{else}}
     <strong>The last check-in with CertKit failed.</strong>
     The keystore keeps serving the certificates it has and retries every 30 seconds.
@@ -227,8 +227,9 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
     {{end}}
   </div>
 
+  {{range .Groups}}
   <article class="box">
-    <h2>Certificate Storage <span class="count">{{len .Certs}}</span></h2>
+    <h2>{{if .URL}}<a href="{{.URL}}">{{.Title}}</a>{{else}}{{.Title}}{{end}} <span class="count">{{len .Certs}}</span></h2>
     {{if .Certs}}
     <div class="scroll">
       <table class="certs">
@@ -246,7 +247,8 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
           <tr>
             <td class="dotcell"><span class="dot {{.StatusClass}}{{if .Pending}} hollow{{end}}" title="{{.Status}}"></span></td>
             <td>
-              <a class="name" href="{{.URL}}" title="{{if .AllNames}}{{.AllNames}}{{else}}{{.ID}}{{end}}">{{.Name}}</a>
+              {{if .URL}}<a class="name" href="{{.URL}}" title="{{if .AllNames}}{{.AllNames}}{{else}}{{.ID}}{{end}}">{{.Name}}</a>
+              {{- else}}<span class="name" title="{{if .AllNames}}{{.AllNames}}{{else}}{{.ID}}{{end}}">{{.Name}}</span>{{end}}
               {{if .OtherNames}}<div class="sub">{{.OtherNames}}</div>{{end}}
               {{if .AllNames}}
               <div class="sub">
@@ -274,9 +276,47 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
       </table>
     </div>
     {{else}}
-    <p class="empty">No certificates yet. Certificates you assign to this keystore in CertKit will show up here.</p>
+    <p class="empty">{{.Empty}}</p>
     {{end}}
   </article>
+  {{end}}
+
+  {{if .PrivateCAs}}
+  <article class="box">
+    <h2>Private CA Keys <span class="count">{{len .PrivateCAs}}</span></h2>
+    <div class="scroll">
+      <table class="certs">
+        <thead>
+          <tr>
+            <th>Certificate Authority</th>
+            <th>Expires</th>
+            <th>Private Key</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .PrivateCAs}}
+          <tr>
+            <td>
+              <a class="name" href="{{.URL}}">{{.Name}}</a>
+              <div class="sub">{{if .Kind}}{{.Kind}} &middot; {{end}}{{.ID}}</div>
+            </td>
+            <td class="exp">
+              {{with .Expires}}
+              <span class="v-{{.Class}}" title="{{.Exact}}">{{.Date}}</span>
+              <div class="sub">{{.Relative}}</div>
+              {{else}}<span class="none">&mdash;</span>{{end}}
+            </td>
+            <td class="key">
+              <span class="v-{{.KeyClass}}">{{.Key}}</span>
+              {{if .KeyNote}}<div class="sub">{{.KeyNote}}</div>{{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </article>
+  {{end}}
 
 </main>
 

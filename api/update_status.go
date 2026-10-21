@@ -34,6 +34,7 @@ type UpdateStatusRequest struct {
 }
 
 type UpdateStatusItem struct {
+	CollectionId string     `json:"collectionId"`
 	CustomCertId string     `json:"customCertId"`
 	Status       CertStatus `json:"status"`
 	Message      string     `json:"message,omitempty"`
@@ -54,7 +55,7 @@ func UpdateStatus(statuses []UpdateStatusItem) error {
 	}
 
 	url := strings.TrimRight(cfg.CertkitBaseUrl, "/") +
-		"/api/keystore/v1/" + cfg.Keystore.Id + "/update-status"
+		"/api/keystore/v2/" + cfg.Keystore.Id + "/update-status"
 
 	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {

@@ -106,9 +106,11 @@ func writeFileAtomic(path string, data []byte) error {
 	return nil
 }
 
-// storageFiles lists the private key files (<customCertId>/<sha1>/key.pem,
-// <customCertId>/csr/key.pem, ca/ca-key.pem, ca/server-key.pem) and the
-// metadata.json files in the storage directory. Listed files may not exist.
+// storageFiles lists the private key files (ca/ca-key.pem, ca/server-key.pem,
+// private-cas/<caId>/key.pem, and <sha1>/key.pem and csr/key.pem in every
+// certificate directory) and the metadata.json files in the storage
+// directory. Certificate directories are collections/<collectionId>/<customCertId>,
+// or <customCertId> for those stored before v2. Listed files may not exist.
 func storageFiles(root string) (keys, metadata []string, errs []error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -118,17 +120,55 @@ func storageFiles(root string) (keys, metadata []string, errs []error) {
 		return nil, nil, errs
 	}
 
+	var certDirs []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		dir := filepath.Join(root, entry.Name())
 
-		if entry.Name() == "ca" {
+		switch entry.Name() {
+		case caDirName:
 			keys = append(keys, filepath.Join(dir, "ca-key.pem"), filepath.Join(dir, "server-key.pem"))
-			continue
+		case privateCAsDirName:
+			cas, err := os.ReadDir(dir)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("read %s: %w", dir, err))
+				continue
+			}
+			for _, ca := range cas {
+				if ca.IsDir() {
+					keys = append(keys, filepath.Join(dir, ca.Name(), "key.pem"))
+				}
+			}
+		case collectionsDirName:
+			collections, err := os.ReadDir(dir)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("read %s: %w", dir, err))
+				continue
+			}
+			for _, collection := range collections {
+				if !collection.IsDir() {
+					continue
+				}
+				collectionDir := filepath.Join(dir, collection.Name())
+				subdirs, err := os.ReadDir(collectionDir)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("read %s: %w", collectionDir, err))
+					continue
+				}
+				for _, sub := range subdirs {
+					if sub.IsDir() {
+						certDirs = append(certDirs, filepath.Join(collectionDir, sub.Name()))
+					}
+				}
+			}
+		default:
+			certDirs = append(certDirs, dir)
 		}
+	}
 
+	for _, dir := range certDirs {
 		subdirs, err := os.ReadDir(dir)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("read %s: %w", dir, err))

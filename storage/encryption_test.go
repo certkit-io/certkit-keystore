@@ -119,15 +119,18 @@ func assertEncryptedWith(t *testing.T, path string, key, wantPlain []byte) {
 func TestMigrateToEncrypted(t *testing.T) {
 	dir, key := setupStorage(t)
 
-	issuedKey, csrKey, caKey, serverKey := newKeyPEM(t), newKeyPEM(t), newKeyPEM(t), newKeyPEM(t)
+	issuedKey, csrKey, caKey, serverKey, collectionKey := newKeyPEM(t), newKeyPEM(t), newKeyPEM(t), newKeyPEM(t), newKeyPEM(t)
 	certPEM := selfSignedCertPEM(t, issuedKey)
 
+	// certA, certB and certD are stored as keystores before v2 did, directly
+	// under the storage directory; certC is in a collection directory.
 	issuedKeyPath := filepath.Join(dir, "certA", "aaaa", "key.pem")
 	csrKeyPath := filepath.Join(dir, "certA", "csr", "key.pem")
 	caKeyPath := filepath.Join(dir, "ca", "ca-key.pem")
 	serverKeyPath := filepath.Join(dir, "ca", "server-key.pem")
 	currentPath := filepath.Join(dir, "certB", "bbbb", "key.pem")
 	redactedPath := filepath.Join(dir, "certD", "dddd", "key.pem")
+	collectionKeyPath := filepath.Join(dir, "collections", "col1", "certC", "cccc", "key.pem")
 
 	writeFile(t, issuedKeyPath, issuedKey)
 	writeFile(t, filepath.Join(dir, "certA", "aaaa", "cert.pem"), []byte(certPEM))
@@ -137,6 +140,7 @@ func TestMigrateToEncrypted(t *testing.T) {
 	currentEnc := encryptWith(t, key, newKeyPEM(t))
 	writeFile(t, currentPath, currentEnc)
 	writeFile(t, redactedPath, []byte("-----BEGIN REDACTED PRIVATE KEY-----\nKEY NOT FOUND\n-----END REDACTED PRIVATE KEY-----\n"))
+	writeFile(t, collectionKeyPath, collectionKey)
 	writeFile(t, filepath.Join(dir, ".certkit-healthcheck"), []byte("x"))
 
 	// metadata.json as written by older versions: the full IssuedCert.
@@ -147,10 +151,11 @@ func TestMigrateToEncrypted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, metadataPath("certA"), oldMeta)
+	writeFile(t, metadataPath(legacyCertRootDir("certA")), oldMeta)
+	writeFile(t, metadataPath(certRootDir("col1", "certC")), oldMeta)
 
 	// Older metadata and plaintext keys are readable before migration.
-	files, err := ReadLatestCert("certA")
+	files, err := ReadLatestCert("col1", "certA")
 	if err != nil {
 		t.Fatalf("ReadLatestCert before migration: %v", err)
 	}
@@ -159,32 +164,35 @@ func TestMigrateToEncrypted(t *testing.T) {
 	}
 
 	res := MigrateToEncrypted()
-	if res.Encrypted != 4 {
-		t.Errorf("Encrypted = %d, want 4", res.Encrypted)
+	if res.Encrypted != 5 {
+		t.Errorf("Encrypted = %d, want 5", res.Encrypted)
 	}
 	if len(res.Failed) != 1 || !strings.Contains(res.Failed[0].Error(), redactedPath) {
 		t.Errorf("Failed = %v, want one failure for %s", res.Failed, redactedPath)
 	}
-	if res.MetadataCleaned != 1 {
-		t.Errorf("MetadataCleaned = %d, want 1", res.MetadataCleaned)
+	if res.MetadataCleaned != 2 {
+		t.Errorf("MetadataCleaned = %d, want 2", res.MetadataCleaned)
 	}
 
 	assertEncryptedWith(t, issuedKeyPath, key, issuedKey)
 	assertEncryptedWith(t, csrKeyPath, key, csrKey)
 	assertEncryptedWith(t, caKeyPath, key, caKey)
 	assertEncryptedWith(t, serverKeyPath, key, serverKey)
+	assertEncryptedWith(t, collectionKeyPath, key, collectionKey)
 	if data, _ := os.ReadFile(currentPath); !bytes.Equal(data, currentEnc) {
 		t.Error("a key already encrypted with the current key was rewritten")
 	}
 
-	meta, _ := os.ReadFile(metadataPath("certA"))
-	for _, leaked := range []string{`"key"`, `"pem"`, `"chain"`, "PRIVATE KEY", "CERTIFICATE"} {
-		if bytes.Contains(meta, []byte(leaked)) {
-			t.Errorf("slim metadata.json still contains %s:\n%s", leaked, meta)
+	for _, root := range []string{legacyCertRootDir("certA"), certRootDir("col1", "certC")} {
+		meta, _ := os.ReadFile(metadataPath(root))
+		for _, leaked := range []string{`"key"`, `"pem"`, `"chain"`, "PRIVATE KEY", "CERTIFICATE"} {
+			if bytes.Contains(meta, []byte(leaked)) {
+				t.Errorf("slim %s still contains %s:\n%s", metadataPath(root), leaked, meta)
+			}
 		}
 	}
 
-	files, err = ReadLatestCert("certA")
+	files, err = ReadLatestCert("col1", "certA")
 	if err != nil {
 		t.Fatalf("ReadLatestCert after migration: %v", err)
 	}
@@ -224,20 +232,20 @@ func TestEnsureCertOnDiskWritesEncryptedKey(t *testing.T) {
 	dir, key := setupStorage(t)
 	keyPEM := newKeyPEM(t)
 	cert := &api.IssuedCert{SHA1: "ABCD", PEM: selfSignedCertPEM(t, keyPEM), Chain: "chain", Key: string(keyPEM)}
-	keyPath := filepath.Join(dir, "cert1", "abcd", "key.pem")
+	keyPath := filepath.Join(dir, "collections", "col1", "cert1", "abcd", "key.pem")
 
-	wrote, err := EnsureCertOnDisk("cert1", cert)
+	wrote, err := EnsureCertOnDisk("col1", "cert1", cert)
 	if err != nil || !wrote {
 		t.Fatalf("EnsureCertOnDisk = %v, %v; want true, nil", wrote, err)
 	}
 	assertEncryptedWith(t, keyPath, key, keyPEM)
-	if ok, err := IsKeyOnDisk("cert1", "ABCD"); !ok {
+	if ok, err := IsKeyOnDisk("col1", "cert1", "ABCD"); !ok {
 		t.Fatalf("IsKeyOnDisk: %v", err)
 	}
 
 	// An existing key is left alone.
 	before, _ := os.ReadFile(keyPath)
-	wrote, err = EnsureCertOnDisk("cert1", cert)
+	wrote, err = EnsureCertOnDisk("col1", "cert1", cert)
 	if err != nil || wrote {
 		t.Fatalf("second EnsureCertOnDisk = %v, %v; want false, nil", wrote, err)
 	}
@@ -248,9 +256,9 @@ func TestEnsureCertOnDiskWritesEncryptedKey(t *testing.T) {
 
 func TestIsKeyOnDiskReportsUnreadableKey(t *testing.T) {
 	dir, _ := setupStorage(t)
-	writeFile(t, filepath.Join(dir, "cert1", "abcd", "key.pem"), encryptWith(t, randomKey(t), newKeyPEM(t)))
+	writeFile(t, filepath.Join(dir, "collections", "col1", "cert1", "abcd", "key.pem"), encryptWith(t, randomKey(t), newKeyPEM(t)))
 
-	if ok, err := IsKeyOnDisk("cert1", "ABCD"); ok || !errors.Is(err, keystoreCrypto.ErrKeyMismatch) {
+	if ok, err := IsKeyOnDisk("col1", "cert1", "ABCD"); ok || !errors.Is(err, keystoreCrypto.ErrKeyMismatch) {
 		t.Fatalf("IsKeyOnDisk = %v, %v; want false with ErrKeyMismatch", ok, err)
 	}
 }
@@ -260,7 +268,7 @@ func TestStartOverIfUnreadable(t *testing.T) {
 		dir, key := setupStorage(t)
 		writeFile(t, filepath.Join(dir, "ca", "ca-key.pem"), encryptWith(t, key, newKeyPEM(t)))
 		writeFile(t, filepath.Join(dir, "certA", "aaaa", "key.pem"), newKeyPEM(t))
-		writeFile(t, filepath.Join(dir, "certB", "csr", "key.pem"), encryptWith(t, randomKey(t), newKeyPEM(t)))
+		writeFile(t, filepath.Join(dir, "collections", "col1", "certB", "csr", "key.pem"), encryptWith(t, randomKey(t), newKeyPEM(t)))
 
 		aside, err := StartOverIfUnreadable()
 		if err != nil {
@@ -274,7 +282,7 @@ func TestStartOverIfUnreadable(t *testing.T) {
 		if _, err := os.Stat(dir); !os.IsNotExist(err) {
 			t.Fatal("storage directory still exists after starting over")
 		}
-		for _, rel := range []string{"ca/ca-key.pem", "certA/aaaa/key.pem", "certB/csr/key.pem"} {
+		for _, rel := range []string{"ca/ca-key.pem", "certA/aaaa/key.pem", "collections/col1/certB/csr/key.pem"} {
 			if _, err := os.Stat(filepath.Join(aside, rel)); err != nil {
 				t.Errorf("%s was not moved with the directory: %v", rel, err)
 			}
@@ -313,7 +321,7 @@ func TestStartOverIfUnreadable(t *testing.T) {
 func TestEnsureCertOnDiskRejectsRedactedKey(t *testing.T) {
 	setupStorage(t)
 	cert := &api.IssuedCert{SHA1: "ABCD", PEM: "cert", Key: "-----BEGIN REDACTED PRIVATE KEY-----\nKEY NOT FOUND\n-----END REDACTED PRIVATE KEY-----\n"}
-	if _, err := EnsureCertOnDisk("cert1", cert); err == nil {
+	if _, err := EnsureCertOnDisk("col1", "cert1", cert); err == nil {
 		t.Fatal("expected an error storing a redacted key")
 	}
 }
@@ -328,13 +336,13 @@ func TestEnsureMetadataIsSlim(t *testing.T) {
 
 	// Old-style metadata for the same cert is rewritten.
 	oldMeta, _ := json.MarshalIndent(map[string]any{"latestCert": cert}, "", "  ")
-	writeFile(t, metadataPath("cert1"), oldMeta)
+	writeFile(t, metadataPath(certRootDir("col1", "cert1")), oldMeta)
 
-	updated, err := EnsureMetadata("cert1", cert)
+	updated, err := EnsureMetadata("col1", "cert1", cert)
 	if err != nil || !updated {
 		t.Fatalf("EnsureMetadata = %v, %v; want true, nil", updated, err)
 	}
-	data, _ := os.ReadFile(metadataPath("cert1"))
+	data, _ := os.ReadFile(metadataPath(certRootDir("col1", "cert1")))
 	if bytes.Contains(data, []byte("PRIVATE KEY")) || bytes.Contains(data, []byte("CERTIFICATE")) {
 		t.Fatalf("metadata.json still contains PEM data:\n%s", data)
 	}
@@ -344,7 +352,7 @@ func TestEnsureMetadataIsSlim(t *testing.T) {
 		t.Fatalf("unexpected metadata %s (err %v)", data, err)
 	}
 
-	updated, err = EnsureMetadata("cert1", cert)
+	updated, err = EnsureMetadata("col1", "cert1", cert)
 	if err != nil || updated {
 		t.Fatalf("second EnsureMetadata = %v, %v; want false, nil", updated, err)
 	}
@@ -357,21 +365,21 @@ func TestSaveAndAdoptCSRKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SaveCSR("cert1", csrPEM, keyPEM); err != nil {
+	if err := SaveCSR("col1", "cert1", csrPEM, keyPEM); err != nil {
 		t.Fatal(err)
 	}
-	assertEncryptedWith(t, filepath.Join(dir, "cert1", "csr", "key.pem"), key, []byte(keyPEM))
-	if !HasPendingCSR("cert1") {
+	assertEncryptedWith(t, filepath.Join(dir, "collections", "col1", "cert1", "csr", "key.pem"), key, []byte(keyPEM))
+	if !HasPendingCSR("col1", "cert1") {
 		t.Fatal("HasPendingCSR = false after SaveCSR")
 	}
 
 	cert := &api.IssuedCert{SHA1: "ABCD", PEM: selfSignedCertPEM(t, []byte(keyPEM))}
-	matched, err := MatchAndAdoptCSRKey("cert1", cert)
+	matched, err := MatchAndAdoptCSRKey("col1", "cert1", cert)
 	if err != nil || !matched {
 		t.Fatalf("MatchAndAdoptCSRKey = %v, %v; want true, nil", matched, err)
 	}
-	assertEncryptedWith(t, filepath.Join(dir, "cert1", "abcd", "key.pem"), key, []byte(keyPEM))
-	if HasPendingCSR("cert1") {
+	assertEncryptedWith(t, filepath.Join(dir, "collections", "col1", "cert1", "abcd", "key.pem"), key, []byte(keyPEM))
+	if HasPendingCSR("col1", "cert1") {
 		t.Fatal("csr directory was not removed")
 	}
 }

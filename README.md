@@ -35,7 +35,7 @@ curl -fsSL https://app.certkit.io/keystore/latest/install.sh | sudo bash
 Or with a registration key pre-set:
 
 ```bash
-export CERTKIT_REGISTRATION_KEY=appid.keystoreid
+export CERTKIT_REGISTRATION_KEY=accountid.keystoreid
 curl -fsSL https://app.certkit.io/keystore/latest/install.sh | sudo bash
 ```
 
@@ -48,21 +48,20 @@ irm https://app.certkit.io/keystore/latest/install.ps1 | iex
 Both installers download the latest release binary, verify its SHA256 checksum, and run `certkit-keystore install`, which prompts for the required configuration:
 
 ```
-Registration key (abc.xyz123): myapp.ks01
-Storage directory [/etc/certkit-keystore/certificates]:
+Registration key (abc.xyz123): myaccount.ks01
 Host (hostname or IP): keystore.example.com
 Port [443]:
-Config file path [/etc/certkit-keystore/config.json]:
+Storage directory [/etc/certkit-keystore/certificates]:
 ```
 
-The service is registered and started automatically (systemd on Linux, Windows Service on Windows). On Windows the script installs the service with the signed MSI; pass `-Binary` to use the raw binary install instead.
+The registration key is shown in CertKit under Settings > Keystore. The service is registered and started automatically (systemd on Linux, Windows Service on Windows). On Windows the script installs the service with the signed MSI; pass `-Binary` to use the raw binary install instead.
 
 ### Windows MSI
 
 `certkit-keystore-windows-amd64.msi` is attached to every release. Double-click it for a setup wizard, or install silently:
 
 ```powershell
-msiexec /i certkit-keystore-windows-amd64.msi /qn REGISTRATIONKEY=myapp.ks01 HOST=keystore.example.com
+msiexec /i certkit-keystore-windows-amd64.msi /qn REGISTRATIONKEY=myaccount.ks01 HOST=keystore.example.com
 ```
 
 Optional properties: `PORT` (default `443`) and `STORAGEDIR` (default `C:\ProgramData\CertKit\certkit-keystore\certificates`). These are only needed on first install; running a newer MSI upgrades in place and keeps the existing configuration. Uninstalling removes the service, firewall rule, and config file, but never the stored certificates.
@@ -70,15 +69,15 @@ Optional properties: `PORT` (default `443`) and `STORAGEDIR` (default `C:\Progra
 ### Manual Install
 
 ```bash
-certkit-keystore install --key myapp.ks01 --host keystore.example.com
+certkit-keystore install --key myaccount.ks01 --host keystore.example.com
 ```
 
 All flags can also be passed non-interactively for automated deployments. The registration key can be provided via the `CERTKIT_REGISTRATION_KEY` environment variable.
 
 ## How It Works
 
-1. **Install.** The keystore registers with CertKit using a one-time registration key and generates an Ed25519 signing keypair.
-2. **Poll.** Every 30 seconds, the keystore polls CertKit for pending CSR requests and issued certificates.
+1. **Install.** The keystore registers with CertKit using a one-time registration key and generates an Ed25519 signing keypair. One keystore serves a whole CertKit account; you choose which certificate collections use it in CertKit.
+2. **Poll.** Every 30 seconds, the keystore polls CertKit for pending CSR requests and issued certificates in those collections.
 3. **Generate.** When a CSR is requested, the keystore generates a private key locally (ECDSA P-256, ECDSA P-384, RSA 2048, or RSA 4096) and submits only the CSR.
 4. **Store.** Issued certificates are written to disk alongside their locally generated keys. Status is reported back to CertKit.
 5. **Serve.** CertKit Agents retrieve certificates from the keystore over HTTPS. Each request is authenticated through CertKit before key material is released.
@@ -91,12 +90,32 @@ On Windows the update must also carry a valid Authenticode signature from the sa
 
 ## Configuration
 
-The keystore is configured via a JSON file created during installation. Default locations:
+The keystore is configured via a JSON file created during installation. The config file always lives in the location below; the storage directory is chosen at install time (defaults shown):
 
 | Platform | Config | Storage |
 |----------|--------|---------|
 | Linux | `/etc/certkit-keystore/config.json` | `/etc/certkit-keystore/certificates` |
 | Windows | `C:\ProgramData\CertKit\certkit-keystore\config.json` | `C:\ProgramData\CertKit\certkit-keystore\certificates` |
+
+The config does not list collections: CertKit tells the keystore which collections it serves on every poll.
+
+### Storage layout
+
+```
+certificates/                     storage directory
+├── ca/                           the keystore's CA and HTTPS server certificate and keys
+├── collections/
+│   └── <collection id>/
+│       └── <certificate id>/
+│           ├── metadata.json     which issued certificate is current
+│           ├── <sha1>/           cert.pem, chain.pem, key.pem (csr.pem when the keystore generated the key)
+│           └── csr/              csr.pem and key.pem while a certificate request is pending
+└── private-cas/
+    └── <CA id>/                  key.pem for a CertKit private CA whose key the keystore holds,
+                                  with cert.pem (and csr.pem for a CA signed by your own root)
+```
+
+All private keys are encrypted at rest. For private CAs kept on the keystore, CertKit holds only the certificates: the keystore generates the CA keys and signs every certificate and CRL those CAs issue.
 
 Environment variables:
 
@@ -104,6 +123,19 @@ Environment variables:
 |----------|---------|
 | `CERTKIT_REGISTRATION_KEY` | Registration key for non-interactive install |
 | `CERTKIT_API_BASE` | Override the CertKit API URL |
+
+## Upgrading from v1
+
+Re-run the install command for your platform. The existing configuration, signing key and stored certificates are kept, and nothing has to be entered again:
+
+- On first start, v2 upgrades `config.json` to version 2 (the collection ID it held is no longer needed).
+- v1 stored certificates directly in the storage directory. On the first poll, each certificate CertKit still sends is moved into `collections/<collection id>/`. Until then it is served from where it is.
+
+A v1 keystore keeps working without the upgrade, but serves a single collection and can't hold private CA keys.
+
+## Backups
+
+Back up `config.json` and the storage directory together. Stored private keys are encrypted with a key CertKit holds for this keystore's registration, and `config.json` holds the identity that fetches it: a storage directory restored under a different registration can't be read, so the keystore moves it aside and starts over. This matters most for private CAs that keep their keys on the keystore, because those keys exist nowhere else.
 
 ## Service Management
 

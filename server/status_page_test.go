@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/certkit-io/certkit-keystore/api"
+	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
 	"github.com/certkit-io/certkit-keystore/storage"
 )
@@ -38,8 +39,8 @@ func setupStatusPage(t *testing.T) {
 }
 
 // storeIssuedCert writes an issued cert for hosts, signed by the keystore CA,
-// to storage under customCertId.
-func storeIssuedCert(t *testing.T, customCertId string, hosts ...string) {
+// to storage under collectionId and customCertId, and returns its SHA1.
+func storeIssuedCert(t *testing.T, collectionId string, customCertId string, hosts ...string) string {
 	t.Helper()
 	caCert, err := os.ReadFile(filepath.Join(caDir(), caCertFile))
 	if err != nil {
@@ -57,12 +58,13 @@ func storeIssuedCert(t *testing.T, customCertId string, hosts ...string) {
 	sum := sha1.Sum(block.Bytes)
 
 	issued := &api.IssuedCert{Id: 1, SHA1: hex.EncodeToString(sum[:]), PEM: certPEM, Key: keyPEM, IssueDate: time.Now()}
-	if _, err := storage.EnsureCertOnDisk(customCertId, issued); err != nil {
+	if _, err := storage.EnsureCertOnDisk(collectionId, customCertId, issued); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := storage.EnsureMetadata(customCertId, issued); err != nil {
+	if _, err := storage.EnsureMetadata(collectionId, customCertId, issued); err != nil {
 		t.Fatal(err)
 	}
+	return issued.SHA1
 }
 
 func getStatusPage(t *testing.T) string {
@@ -95,22 +97,22 @@ func assertContains(t *testing.T, body string, want ...string) {
 func TestStatusPageShowsCertificates(t *testing.T) {
 	setupStatusPage(t)
 
-	storeIssuedCert(t, "stored", "www.example.com", "example.com")
-	storeIssuedCert(t, "orphan", "old.example.com")
+	storeIssuedCert(t, "col1", "stored", "www.example.com", "example.com")
+	storeIssuedCert(t, "col2", "orphan", "old.example.com")
 	csrPEM, keyPEM, err := keystoreCrypto.GenerateCSR([]string{"pending.example.com"}, keystoreCrypto.KeyAlgorithmEC256)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := storage.SaveCSR("pending", csrPEM, keyPEM); err != nil {
+	if err := storage.SaveCSR("col1", "pending", csrPEM, keyPEM); err != nil {
 		t.Fatal(err)
 	}
 
-	RecordPoll(&api.PollResponse{Certificates: []api.PollCertificate{
+	RecordPoll(&api.PollResponse{Collections: []api.PollCollection{{Id: "col1", Name: "Production", Certificates: []api.PollCertificate{
 		{CustomCertId: "stored"}, {CustomCertId: "pending"}, {CustomCertId: "missing"}, {CustomCertId: "unissued"},
-	}}, []api.UpdateStatusItem{
-		{CustomCertId: "stored", Status: api.CertStatuses.Synced},
-		{CustomCertId: "pending", Status: api.CertStatuses.PendingCSR},
-		{CustomCertId: "missing", Status: api.CertStatuses.KeyNotFound, Message: "key not found at <path>"},
+	}}}}, []api.UpdateStatusItem{
+		{CollectionId: "col1", CustomCertId: "stored", Status: api.CertStatuses.Synced},
+		{CollectionId: "col1", CustomCertId: "pending", Status: api.CertStatuses.PendingCSR},
+		{CollectionId: "col1", CustomCertId: "missing", Status: api.CertStatuses.KeyNotFound, Message: "key not found at <path>"},
 	})
 
 	body := getStatusPage(t)
@@ -123,18 +125,89 @@ func TestStatusPageShowsCertificates(t *testing.T) {
 		"pending.example.com", "Pending Certificate Request", "awaiting certificate",
 		"Private Key Missing", "key not found at &lt;path&gt;",
 		"Not Issued",
-		"old.example.com", "Not in CertKit",
+		"old.example.com", "Not in CertKit", "Other Stored Certificates",
 		"1 certificate needs attention",
 		"CA expires", "keystore.example.com",
+		">Production</a>", "/app/col1/keystore", "/app/col1/certificates/stored", "/app/col2/certificates/orphan",
+		"/settings/keystore",
+	)
+}
+
+func TestStatusPageGroupsCollections(t *testing.T) {
+	setupStatusPage(t)
+
+	storeIssuedCert(t, "col1", "first", "first.example.com")
+	// Stored before v2, directly under the storage directory, and not moved
+	// into its collection yet.
+	storeIssuedCert(t, "col2", "legacy", "legacy.example.com")
+	storageDir := config.CurrentConfig.Keystore.StorageDir
+	if err := os.Rename(filepath.Join(storageDir, "collections", "col2", "legacy"), filepath.Join(storageDir, "legacy")); err != nil {
+		t.Fatal(err)
+	}
+
+	RecordPoll(&api.PollResponse{Collections: []api.PollCollection{
+		{Id: "col1", Name: "Production", Certificates: []api.PollCertificate{{CustomCertId: "first"}}},
+		{Id: "col2", Name: "Staging", Certificates: []api.PollCertificate{{CustomCertId: "legacy"}}},
+		{Id: "col3", Name: "Empty", Certificates: nil},
+	}}, []api.UpdateStatusItem{
+		{CollectionId: "col1", CustomCertId: "first", Status: api.CertStatuses.Synced},
+		{CollectionId: "col2", CustomCertId: "legacy", Status: api.CertStatuses.Synced},
+	})
+
+	body := getStatusPage(t)
+	assertContains(t, body,
+		">Production</a>", ">Staging</a>", ">Empty</a>",
+		"first.example.com", "/app/col1/certificates/first",
+		"legacy.example.com", "/app/col2/certificates/legacy",
+		"No certificates in this collection yet.",
+		"Running",
+	)
+	if strings.Contains(body, "Other Stored Certificates") {
+		t.Error("a certificate CertKit sent is listed as not sent")
+	}
+	if strings.Index(body, "Production") > strings.Index(body, "Staging") {
+		t.Error("collections are not in CertKit's order")
+	}
+}
+
+func TestStatusPageShowsPrivateCAs(t *testing.T) {
+	setupStatusPage(t)
+	certPEM, keyPEM, err := keystoreCrypto.GenerateCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.SavePrivateCAKey("ca1", []byte(keyPEM)); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.SavePrivateCACertificate("ca1", certPEM); err != nil {
+		t.Fatal(err)
+	}
+	RecordPoll(&api.PollResponse{}, nil)
+
+	assertContains(t, getStatusPage(t),
+		"Private CA Keys", "CertKit Keystore CA", "root CA &middot; ca1",
+		"/settings/certificate-authorities/ca1", "ECDSA P-256", "encrypted at rest",
+	)
+}
+
+func TestStatusPageWithNoCollections(t *testing.T) {
+	setupStatusPage(t)
+	storeIssuedCert(t, "col1", "stored", "www.example.com")
+
+	RecordPoll(&api.PollResponse{}, nil)
+
+	assertContains(t, getStatusPage(t),
+		"No collections use this keystore yet.",
+		"Other Stored Certificates", "www.example.com", "Not in CertKit",
 	)
 }
 
 func TestStatusPageShowsPollFailure(t *testing.T) {
 	setupStatusPage(t)
-	storeIssuedCert(t, "stored", "www.example.com")
+	storeIssuedCert(t, "col1", "stored", "www.example.com")
 
-	RecordPoll(&api.PollResponse{Certificates: []api.PollCertificate{{CustomCertId: "stored"}}},
-		[]api.UpdateStatusItem{{CustomCertId: "stored", Status: api.CertStatuses.Synced}})
+	RecordPoll(&api.PollResponse{Collections: []api.PollCollection{{Id: "col1", Name: "Production", Certificates: []api.PollCertificate{{CustomCertId: "stored"}}}}},
+		[]api.UpdateStatusItem{{CollectionId: "col1", CustomCertId: "stored", Status: api.CertStatuses.Synced}})
 	RecordPollFailure(errors.New("dial tcp: connection refused"))
 
 	body := getStatusPage(t)
@@ -146,7 +219,7 @@ func TestStatusPageShowsPollFailure(t *testing.T) {
 
 func TestStatusPageBeforeFirstPoll(t *testing.T) {
 	setupStatusPage(t)
-	storeIssuedCert(t, "stored", "www.example.com")
+	storeIssuedCert(t, "col1", "stored", "www.example.com")
 
-	assertContains(t, getStatusPage(t), "Connecting to CertKit", "Waiting for CertKit", "www.example.com")
+	assertContains(t, getStatusPage(t), "Connecting to CertKit", "Certificate Storage", "Waiting for CertKit", "www.example.com")
 }

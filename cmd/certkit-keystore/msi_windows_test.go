@@ -30,19 +30,19 @@ func TestEnsureMsiConfig(t *testing.T) {
 		{name: "relative storage dir", args: args{"app.ks1", "localhost", "443", `certs`}, wantErr: true},
 		{
 			name:     "initialized config kept even with a new key",
-			existing: &config.Config{Keystore: &config.KeystoreInfo{Id: "old", ApplicationId: "app", Host: "old-host", Port: "443", Initialized: true}},
+			existing: &config.Config{Keystore: &config.KeystoreInfo{Id: "old", Host: "old-host", Port: "443", Initialized: true}},
 			args:     fresh,
 			wantHost: "old-host",
 		},
 		{
 			name:     "uninitialized config kept without a key (upgrade)",
-			existing: &config.Config{Keystore: &config.KeystoreInfo{Id: "old", ApplicationId: "app", Host: "old-host", Port: "443"}},
+			existing: &config.Config{Keystore: &config.KeystoreInfo{Id: "old", Host: "old-host", Port: "443"}},
 			args:     args{"", "", "443", `C:\certs\.`},
 			wantHost: "old-host",
 		},
 		{
 			name:     "uninitialized config replaced by a new key",
-			existing: &config.Config{Keystore: &config.KeystoreInfo{Id: "old", ApplicationId: "app", Host: "old-host", Port: "443"}},
+			existing: &config.Config{Keystore: &config.KeystoreInfo{Id: "old", Host: "old-host", Port: "443"}},
 			args:     fresh,
 			wantHost: "localhost",
 			wantDir:  `C:\certkit\certs`,

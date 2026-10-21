@@ -39,7 +39,7 @@ func FetchEncryptionKey() ([]byte, error) {
 	}
 
 	url := strings.TrimRight(cfg.CertkitBaseUrl, "/") +
-		"/api/keystore/v1/" + cfg.Keystore.Id + "/encryption-key"
+		"/api/keystore/v2/" + cfg.Keystore.Id + "/encryption-key"
 
 	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {

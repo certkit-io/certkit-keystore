@@ -13,6 +13,9 @@ import (
 // for the status page. Private keys are checked for presence and encryption
 // but never decrypted.
 type StoredCert struct {
+	// CollectionId is the collection directory the certificate is in, or ""
+	// for a certificate stored before v2 that hasn't been moved yet.
+	CollectionId string
 	CustomCertId string
 	// Latest is the latest issued cert from metadata.json; nil if there is none.
 	Latest *CertInfo
@@ -28,7 +31,8 @@ type StoredCert struct {
 	Versions int
 }
 
-// ListStoredCerts lists the certificates in the storage directory.
+// ListStoredCerts lists the certificates in the storage directory: those in
+// collection directories, then any stored before v2.
 func ListStoredCerts() ([]StoredCert, error) {
 	entries, err := os.ReadDir(config.CurrentConfig.Keystore.StorageDir)
 	if err != nil {
@@ -39,19 +43,35 @@ func ListStoredCerts() ([]StoredCert, error) {
 	}
 
 	var certs []StoredCert
-	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "ca" {
-			continue
+	if collections, err := os.ReadDir(collectionsDir()); err == nil {
+		for _, collection := range collections {
+			if !collection.IsDir() {
+				continue
+			}
+			certDirs, err := os.ReadDir(filepath.Join(collectionsDir(), collection.Name()))
+			if err != nil {
+				continue
+			}
+			for _, certDir := range certDirs {
+				if certDir.IsDir() {
+					certs = append(certs, readStoredCert(collection.Name(), certDir.Name(), certRootDir(collection.Name(), certDir.Name())))
+				}
+			}
 		}
-		certs = append(certs, readStoredCert(entry.Name()))
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() && isLegacyCertDirName(entry.Name()) {
+			certs = append(certs, readStoredCert("", entry.Name(), legacyCertRootDir(entry.Name())))
+		}
 	}
 	return certs, nil
 }
 
-func readStoredCert(customCertId string) StoredCert {
-	sc := StoredCert{CustomCertId: customCertId}
+func readStoredCert(collectionId string, customCertId string, root string) StoredCert {
+	sc := StoredCert{CollectionId: collectionId, CustomCertId: customCertId}
 
-	if subdirs, err := os.ReadDir(certRootDir(customCertId)); err == nil {
+	if subdirs, err := os.ReadDir(root); err == nil {
 		for _, sub := range subdirs {
 			if sub.IsDir() && sub.Name() != "csr" {
 				sc.Versions++
@@ -59,11 +79,11 @@ func readStoredCert(customCertId string) StoredCert {
 		}
 	}
 
-	if HasPendingCSR(customCertId) {
-		sc.CSRPEM, _ = os.ReadFile(filepath.Join(csrDir(customCertId), "csr.pem"))
+	if hasPendingCSRIn(root) {
+		sc.CSRPEM, _ = os.ReadFile(filepath.Join(csrDir(root), "csr.pem"))
 	}
 
-	data, err := os.ReadFile(metadataPath(customCertId))
+	data, err := os.ReadFile(metadataPath(root))
 	if err != nil {
 		return sc
 	}
@@ -73,7 +93,7 @@ func readStoredCert(customCertId string) StoredCert {
 	}
 	sc.Latest = meta.LatestCert
 
-	dir := issuedCertDir(customCertId, meta.LatestCert.SHA1)
+	dir := issuedCertDir(root, meta.LatestCert.SHA1)
 	sc.CertPEM, _ = os.ReadFile(filepath.Join(dir, "cert.pem"))
 	if key, err := os.ReadFile(filepath.Join(dir, "key.pem")); err == nil {
 		sc.KeyStored = true

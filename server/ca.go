@@ -26,6 +26,15 @@ func caDir() string {
 // updateCAInfo sends the CA cert to CertKit; tests replace it.
 var updateCAInfo = api.UpdateCAInfo
 
+// CACertPEM returns the keystore's CA certificate.
+func CACertPEM() (string, error) {
+	data, err := os.ReadFile(filepath.Join(caDir(), caCertFile))
+	if err != nil {
+		return "", fmt.Errorf("read CA cert: %w", err)
+	}
+	return string(data), nil
+}
+
 // EnsureCA checks if a CA cert exists on disk. If not, generates a new
 // ECDSA P-256 CA, saves the cert and the encrypted key to disk (0600), and
 // sends the CA cert to CertKit via /update-ca-info.

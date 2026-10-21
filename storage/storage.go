@@ -42,20 +42,57 @@ func marshalMetadata(meta CertMetadata) ([]byte, error) {
 
 // --- path helpers ---
 
-func certRootDir(customCertId string) string {
+// Certificates are stored per collection, under
+// <storageDir>/collections/<collectionId>/<customCertId>. Keystores before
+// v2 served a single collection and stored them directly under the storage
+// directory; AdoptLegacyCert moves those into place.
+const (
+	caDirName          = "ca"
+	collectionsDirName = "collections"
+)
+
+func collectionsDir() string {
+	return filepath.Join(config.CurrentConfig.Keystore.StorageDir, collectionsDirName)
+}
+
+func certRootDir(collectionId string, customCertId string) string {
+	return filepath.Join(collectionsDir(), collectionId, customCertId)
+}
+
+func legacyCertRootDir(customCertId string) string {
 	return filepath.Join(config.CurrentConfig.Keystore.StorageDir, customCertId)
 }
 
-func issuedCertDir(customCertId string, sha1 string) string {
-	return filepath.Join(certRootDir(customCertId), strings.ToLower(sha1))
+// isLegacyCertDirName reports whether a directory directly under the storage
+// directory holds a certificate stored before v2.
+func isLegacyCertDirName(name string) bool {
+	return name != caDirName && name != collectionsDirName && name != privateCAsDirName
 }
 
-func csrDir(customCertId string) string {
-	return filepath.Join(certRootDir(customCertId), "csr")
+func issuedCertDir(certRoot string, sha1 string) string {
+	return filepath.Join(certRoot, strings.ToLower(sha1))
 }
 
-func metadataPath(customCertId string) string {
-	return filepath.Join(certRootDir(customCertId), "metadata.json")
+func csrDir(certRoot string) string {
+	return filepath.Join(certRoot, "csr")
+}
+
+func metadataPath(certRoot string) string {
+	return filepath.Join(certRoot, "metadata.json")
+}
+
+// IsSafeId reports whether id, a collection or certificate ID from CertKit,
+// can be used as a directory name: letters, digits, '-' and '_' only.
+func IsSafeId(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // --- file helpers ---
@@ -90,8 +127,8 @@ func writeKeyIfMissing(path string, keyPEM []byte) (bool, error) {
 // EnsureCertOnDisk checks if cert.pem, chain.pem, and key.pem exist for the
 // given certificate. If any are missing, it writes them. Returns true if any
 // files were written.
-func EnsureCertOnDisk(customCertId string, cert *api.IssuedCert) (bool, error) {
-	dir := issuedCertDir(customCertId, cert.SHA1)
+func EnsureCertOnDisk(collectionId string, customCertId string, cert *api.IssuedCert) (bool, error) {
+	dir := issuedCertDir(certRootDir(collectionId, customCertId), cert.SHA1)
 
 	if err := ensureDir(dir); err != nil {
 		return false, fmt.Errorf("could not create directory: %w", err)
@@ -128,8 +165,8 @@ func EnsureCertOnDisk(customCertId string, cert *api.IssuedCert) (bool, error) {
 
 // IsKeyOnDisk checks that key.pem exists in the cert's SHA1 directory and can
 // be decrypted. Returns (true, nil) if so, (false, error) if not.
-func IsKeyOnDisk(customCertId string, sha1 string) (bool, error) {
-	path := filepath.Join(issuedCertDir(customCertId, sha1), "key.pem")
+func IsKeyOnDisk(collectionId string, customCertId string, sha1 string) (bool, error) {
+	path := filepath.Join(issuedCertDir(certRootDir(collectionId, customCertId), sha1), "key.pem")
 	if _, err := os.Stat(path); err != nil {
 		return false, fmt.Errorf("key not found at %s", path)
 	}
@@ -141,8 +178,9 @@ func IsKeyOnDisk(customCertId string, sha1 string) (bool, error) {
 
 // EnsureMetadata writes or updates metadata.json if it doesn't already
 // describe the latest cert in the current (slim) format.
-func EnsureMetadata(customCertId string, cert *api.IssuedCert) (bool, error) {
-	path := metadataPath(customCertId)
+func EnsureMetadata(collectionId string, customCertId string, cert *api.IssuedCert) (bool, error) {
+	root := certRootDir(collectionId, customCertId)
+	path := metadataPath(root)
 
 	data, err := marshalMetadata(CertMetadata{LatestCert: &CertInfo{
 		Id:           cert.Id,
@@ -159,7 +197,7 @@ func EnsureMetadata(customCertId string, cert *api.IssuedCert) (bool, error) {
 		return false, nil
 	}
 
-	if err := ensureDir(certRootDir(customCertId)); err != nil {
+	if err := ensureDir(root); err != nil {
 		return false, fmt.Errorf("create directory: %w", err)
 	}
 
@@ -171,16 +209,21 @@ func EnsureMetadata(customCertId string, cert *api.IssuedCert) (bool, error) {
 }
 
 // HasPendingCSR returns true if there is a csr/key.pem on disk for this cert.
-func HasPendingCSR(customCertId string) bool {
-	_, err := os.Stat(filepath.Join(csrDir(customCertId), "key.pem"))
+func HasPendingCSR(collectionId string, customCertId string) bool {
+	return hasPendingCSRIn(certRootDir(collectionId, customCertId))
+}
+
+func hasPendingCSRIn(certRoot string) bool {
+	_, err := os.Stat(filepath.Join(csrDir(certRoot), "key.pem"))
 	return err == nil
 }
 
 // MatchAndAdoptCSRKey checks if the issued cert's public key matches the
 // pending CSR private key. If so, it copies the CSR key into the cert
 // directory as key.pem, and removes the csr/ directory.
-func MatchAndAdoptCSRKey(customCertId string, cert *api.IssuedCert) (bool, error) {
-	cDir := csrDir(customCertId)
+func MatchAndAdoptCSRKey(collectionId string, customCertId string, cert *api.IssuedCert) (bool, error) {
+	root := certRootDir(collectionId, customCertId)
+	cDir := csrDir(root)
 	keyPEMBytes, err := ReadPrivateKey(filepath.Join(cDir, "key.pem"))
 	if err != nil {
 		return false, fmt.Errorf("read csr key: %w", err)
@@ -201,7 +244,7 @@ func MatchAndAdoptCSRKey(customCertId string, cert *api.IssuedCert) (bool, error
 	}
 
 	// Keys match — copy key.pem and csr.pem into the cert directory
-	iDir := issuedCertDir(customCertId, cert.SHA1)
+	iDir := issuedCertDir(root, cert.SHA1)
 	if err := ensureDir(iDir); err != nil {
 		return false, fmt.Errorf("create cert directory: %w", err)
 	}
@@ -223,9 +266,9 @@ func MatchAndAdoptCSRKey(customCertId string, cert *api.IssuedCert) (bool, error
 	return true, nil
 }
 
-// SaveCSR writes csr.pem and key.pem to {storageDir}/{customCertId}/csr/.
-func SaveCSR(customCertId string, csrPEM string, keyPEM string) error {
-	dir := csrDir(customCertId)
+// SaveCSR writes csr.pem and key.pem to the certificate's csr/ directory.
+func SaveCSR(collectionId string, customCertId string, csrPEM string, keyPEM string) error {
+	dir := csrDir(certRootDir(collectionId, customCertId))
 
 	if err := ensureDir(dir); err != nil {
 		return fmt.Errorf("create directory %s: %w", dir, err)
@@ -243,9 +286,20 @@ func SaveCSR(customCertId string, csrPEM string, keyPEM string) error {
 }
 
 // ReadLatestCert reads the latest issued certificate files from disk for the
-// given customCertId. Returns the PEM contents and SHA1 thumbprint.
-func ReadLatestCert(customCertId string) (*CertFiles, error) {
-	data, err := os.ReadFile(metadataPath(customCertId))
+// given certificate. Returns the PEM contents and SHA1 thumbprint.
+func ReadLatestCert(collectionId string, customCertId string) (*CertFiles, error) {
+	if !IsSafeId(collectionId) || !IsSafeId(customCertId) {
+		return nil, fmt.Errorf("invalid certificate %q in collection %q", customCertId, collectionId)
+	}
+
+	root := certRootDir(collectionId, customCertId)
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		// Stored before v2 and not moved into its collection yet; the next
+		// poll does that.
+		root = legacyCertRootDir(customCertId)
+	}
+
+	data, err := os.ReadFile(metadataPath(root))
 	if err != nil {
 		return nil, fmt.Errorf("read metadata: %w", err)
 	}
@@ -259,7 +313,7 @@ func ReadLatestCert(customCertId string) (*CertFiles, error) {
 	}
 
 	sha1 := meta.LatestCert.SHA1
-	dir := issuedCertDir(customCertId, sha1)
+	dir := issuedCertDir(root, sha1)
 
 	certPEM, err := os.ReadFile(filepath.Join(dir, "cert.pem"))
 	if err != nil {
