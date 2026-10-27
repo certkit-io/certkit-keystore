@@ -230,7 +230,10 @@ func (m *TLSManager) StartServer() error {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", handleRoot)
+	mux.HandleFunc("GET /{$}", requireLogin(handleRoot))
+	mux.HandleFunc("GET /auth/login", handleLogin)
+	mux.HandleFunc("GET /auth/callback", handleLoginCallback)
+	mux.HandleFunc("POST /auth/logout", handleLogout)
 	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-certificate", handleFetchCertificate)
 	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-pfx", handleFetchPfx)
 

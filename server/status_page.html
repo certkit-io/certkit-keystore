@@ -80,6 +80,9 @@ a:hover { color: var(--primary-hover); text-decoration-color: currentColor; }
 .logo { display: block; height: 30px; width: auto; }
 .crumb { color: var(--muted); }
 .topbar .manage { margin-left: auto; white-space: nowrap; }
+.logout { margin: 0; }
+.logout button { padding: 3px 12px; border: 1px solid var(--line); border-radius: 3px; background: none; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
+.logout button:hover { border-color: var(--primary); color: var(--primary); }
 
 .hero { display: flex; align-items: center; gap: 18px; margin: 28px 0 22px; }
 h1 { margin: 0; color: var(--heading); font-size: 28px; line-height: 1.2; }
@@ -114,9 +117,6 @@ h1 { margin: 0; color: var(--heading); font-size: 28px; line-height: 1.2; }
 }
 .box h2 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; color: var(--heading); font-size: 17px; }
 .box h2 .count { color: var(--muted); font-size: 14px; font-weight: 400; }
-.panels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 28px; }
-.panels .box { margin: 0; padding: 14px 16px; }
-.panels h2 { margin-bottom: 6px; font-size: 15px; }
 
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
@@ -130,21 +130,19 @@ tbody tr:last-child > * { border-bottom: 0; }
 .sub { margin-top: 2px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .empty { margin: 0; color: var(--muted); }
 
-.kv { font-size: 13px; line-height: 1.45; }
-.kv th, .kv td { padding: 3px 0; border: 0; }
-.kv th { width: 1%; padding-right: 14px; color: var(--muted); font-weight: 400; white-space: nowrap; }
-.kv td { overflow-wrap: anywhere; }
+.notes { margin: 0 0 14px; padding: 0 0 14px 18px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.5; }
+.notes li { max-width: 120ch; }
+.notes li + li { margin-top: 4px; }
+.notes strong { color: var(--heading); }
+.fields { margin: 0; columns: 440px 2; column-gap: 48px; font-size: 13px; line-height: 1.45; }
+.field { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; padding: 3px 0; break-inside: avoid; }
+.field dt { color: var(--muted); }
+.field dd { margin: 0; overflow-wrap: anywhere; }
 .note { color: var(--muted); }
 .none { color: var(--muted); }
 
 footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size: 13px; }
 
-@media (max-width: 1180px) {
-  .panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 640px) {
-  .panels { grid-template-columns: minmax(0, 1fr); }
-}
 @media (max-width: 600px) {
   body { font-size: 14px; }
   .wrap { padding: 0 16px; }
@@ -152,6 +150,7 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
   .box { padding: 16px; }
   h1 { font-size: 22px; }
   .hide-sm { display: none; }
+  .field { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 4px 0; }
 }
 </style>
 </head>
@@ -166,6 +165,7 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
     </a>
     <span class="crumb">/ keystore</span>
     <a class="manage" href="{{.ManagementURL}}">Manage in CertKit &rarr;</a>
+    <form class="logout" method="post" action="/auth/logout"><button type="submit">Logout</button></form>
   </div>
 </header>
 
@@ -204,28 +204,7 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
   </div>
   {{end}}
 
-  <div class="panels">
-    {{range .Sections}}
-    <article class="box">
-      <h2>{{.Title}}</h2>
-      <table class="kv">
-        <tbody>
-          {{range .Fields}}
-          <tr>
-            <th>{{.Label}}</th>
-            <td>
-              {{if .Link}}<a href="{{.Link}}">{{.Value}}</a>
-              {{- else if .Value}}<span class="v-{{.Class}}"{{if .Title}} title="{{.Title}}"{{end}}>{{.Value}}</span>
-              {{- else}}<span class="none">&mdash;</span>{{end}}
-              {{- if .Note}} <span class="note">&middot; {{.Note}}</span>{{end}}
-            </td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
-    </article>
-    {{end}}
-  </div>
+  {{template "section" .Keystore}}
 
   {{range .Groups}}
   <article class="box">
@@ -318,6 +297,7 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
   </article>
   {{end}}
 
+  {{range .Sections}}{{template "section" .}}{{end}}
 </main>
 
 <footer class="wrap">
@@ -327,3 +307,26 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
 </footer>
 </body>
 </html>
+{{define "section"}}
+  <article class="box">
+    <h2>{{.Title}}</h2>
+    {{if .Notes}}
+    <ul class="notes">
+      {{range .Notes}}<li><strong>{{.Term}}</strong> {{.Text}}</li>{{end}}
+    </ul>
+    {{end}}
+    <dl class="fields">
+      {{range .Fields}}
+      <div class="field">
+        <dt>{{.Label}}</dt>
+        <dd>
+          {{if .Link}}<a href="{{.Link}}">{{.Value}}</a>
+          {{- else if .Value}}<span class="v-{{.Class}}"{{if .Title}} title="{{.Title}}"{{end}}>{{.Value}}</span>
+          {{- else}}<span class="none">&mdash;</span>{{end}}
+          {{- if .Note}} <span class="note">&middot; {{.Note}}</span>{{end}}
+        </dd>
+      </div>
+      {{end}}
+    </dl>
+  </article>
+{{end}}

@@ -51,14 +51,6 @@ type pollCollection struct {
 	CertIds []string
 }
 
-func (p pollState) certCount() int {
-	n := 0
-	for _, c := range p.Collections {
-		n += len(c.CertIds)
-	}
-	return n
-}
-
 var (
 	pollMu    sync.Mutex
 	lastPoll  pollState
@@ -127,10 +119,12 @@ type statusPage struct {
 	PollError     string
 	Unauthorized  bool
 	UpdateVersion string
+	Keystore      section
 	Groups        []certGroup
 	PrivateCAs    []caRow
-	Sections      []section
-	Generated     string
+	// Sections come after the certificates.
+	Sections  []section
+	Generated string
 }
 
 // certGroup is one box of certificates: a collection CertKit sent, or the
@@ -185,8 +179,16 @@ type when struct {
 }
 
 type section struct {
-	Title  string
+	Title string
+	// Notes explain the section, above its fields.
+	Notes  []sectionNote
 	Fields []field
+}
+
+// sectionNote is a sentence or two that starts with Term in bold.
+type sectionNote struct {
+	Term string
+	Text string
 }
 
 // field is one row of a section. Note is muted text after the value; Title
@@ -215,7 +217,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; img-src "+certkitOrigin()+
 		"; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"+
-		"; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+		"; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 	w.Write(buf.Bytes())
 }
 
@@ -262,9 +264,8 @@ func buildStatusPage(now time.Time) statusPage {
 		page.Unauthorized = errors.Is(poll.Err, api.ErrKeystoreUnauthorized)
 	}
 
+	page.Keystore = keystoreSection(poll, now)
 	page.Sections = []section{
-		keystoreSection(poll),
-		certkitSection(poll, now),
 		trustSection(now),
 		hostSection(now),
 	}
@@ -555,34 +556,68 @@ func parseCSRPEM(data []byte) (*x509.CertificateRequest, error) {
 
 // --- detail sections ---
 
-func keystoreSection(poll pollState) section {
+func keystoreSection(poll pollState, now time.Time) section {
 	k := config.CurrentConfig.Keystore
+
+	check := field{Label: "Checked in", Value: "Not yet"}
+	if !poll.LastAttempt.IsZero() {
+		check.Value, check.Title = relativeTime(poll.LastAttempt, now), formatTime(poll.LastAttempt)
+		check.Class, check.Note = "good", "every 30s"
+		if poll.Err != nil {
+			check.Class, check.Note = "bad", "failed"
+		}
+	}
+	s := section{Title: "Keystore", Fields: []field{check}}
+	if poll.Err != nil {
+		success := field{Label: "Last success", Value: "Never"}
+		if !poll.LastSuccess.IsZero() {
+			success.Value, success.Title = relativeTime(poll.LastSuccess, now), formatTime(poll.LastSuccess)
+		}
+		s.Fields = append(s.Fields, success)
+	}
+
+	enc := field{Label: "Encryption", Value: "Key not loaded", Class: "bad"}
+	if kid := storage.EncryptionKeyID(); kid != "" {
+		enc = field{Label: "Encryption", Value: "On", Class: "good", Note: "key " + kid,
+			Title: "Private keys are encrypted at rest with a key held by CertKit and kept in memory only"}
+	}
 	collections := field{Label: "Collections"}
 	if !poll.LastSuccess.IsZero() {
 		collections.Value = strconv.Itoa(len(poll.Collections))
 	}
-	return section{Title: "Keystore", Fields: []field{
-		{Label: "Base URL", Value: k.BaseUrl()},
-		{Label: "Port", Value: k.Port},
-		{Label: "Storage", Value: absPath(k.StorageDir)},
-		{Label: "Config", Value: absPath(config.CurrentPath)},
-		{Label: "Service", Value: k.ServiceName},
-		{Label: "Keystore ID", Value: k.Id},
-		{Label: "Account", Value: k.AccountId},
+
+	s.Fields = append(s.Fields,
+		field{Label: "Keystore Base URL", Value: k.BaseUrl()},
+		field{Label: "CertKit Base URL", Value: certkitBaseURL(), Link: certkitBaseURL()},
+		enc,
 		collections,
-	}}
+		field{Label: "Port", Value: k.Port},
+		field{Label: "Storage", Value: absPath(k.StorageDir)},
+		field{Label: "Config", Value: absPath(config.CurrentPath)},
+		field{Label: "Service", Value: k.ServiceName},
+		field{Label: "Keystore ID", Value: k.Id},
+	)
+	return s
 }
 
 func trustSection(now time.Time) section {
-	s := section{Title: "CA & TLS"}
+	s := section{Title: "CA & TLS", Notes: []sectionNote{
+		{"The CA", "is this keystore's own certificate authority, created when the keystore first started. " +
+			"It isn't one of your private CAs in CertKit, and it signs nothing but the keystore's TLS certificate."},
+		{"Agents", "trust the keystore through CertKit, which sends them this CA's certificate. " +
+			"They only accept a keystore certificate that chains to it. " +
+			"Browsers don't know the CA, which is why they warn about this page."},
+		{"The TLS certificate", "is what the keystore serves on its HTTPS port. " +
+			"It covers the host in the Keystore Base URL, the address agents connect to, " +
+			"and renews itself " + approxDuration(rotationWindow) + " before it expires."},
+	}}
 
 	if ca, err := readCertFile(filepath.Join(caDir(), caCertFile)); err != nil {
 		s.Fields = append(s.Fields, field{Label: "CA", Value: "Unreadable", Note: err.Error(), Class: "bad"})
 	} else {
-		fp := fingerprint(ca.Raw)
 		s.Fields = append(s.Fields,
 			expiryField("CA expires", ca.NotAfter, now),
-			field{Label: "CA SHA-256", Value: fp[:23] + "…", Title: fp},
+			field{Label: "CA fingerprint", Value: fingerprint(ca.Raw), Note: "SHA-256"},
 		)
 	}
 
@@ -597,40 +632,6 @@ func trustSection(now time.Time) section {
 			field{Label: "Protocol", Value: "TLS 1.3"},
 		)
 	}
-	return s
-}
-
-func certkitSection(poll pollState, now time.Time) section {
-	s := section{Title: "CertKit", Fields: []field{
-		{Label: "URL", Value: certkitBaseURL(), Link: certkitBaseURL()},
-	}}
-
-	check := field{Label: "Checked in", Value: "Not yet"}
-	if !poll.LastAttempt.IsZero() {
-		check.Value, check.Title = relativeTime(poll.LastAttempt, now), formatTime(poll.LastAttempt)
-		check.Class, check.Note = "good", "every 30s"
-		if poll.Err != nil {
-			check.Class, check.Note = "bad", "failed"
-		}
-	}
-	s.Fields = append(s.Fields, check)
-	if poll.Err != nil {
-		success := field{Label: "Last success", Value: "Never"}
-		if !poll.LastSuccess.IsZero() {
-			success.Value, success.Title = relativeTime(poll.LastSuccess, now), formatTime(poll.LastSuccess)
-		}
-		s.Fields = append(s.Fields, success)
-	}
-	if !poll.LastSuccess.IsZero() {
-		s.Fields = append(s.Fields, field{Label: "Assigned", Value: plural(poll.certCount(), "certificate")})
-	}
-
-	enc := field{Label: "Encryption", Value: "Key not loaded", Class: "bad"}
-	if kid := storage.EncryptionKeyID(); kid != "" {
-		enc = field{Label: "Encryption", Value: "On", Class: "good", Note: "key " + kid,
-			Title: "Private keys are encrypted at rest with a key held by CertKit and kept in memory only"}
-	}
-	s.Fields = append(s.Fields, enc)
 	return s
 }
 

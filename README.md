@@ -84,7 +84,7 @@ All flags can also be passed non-interactively for automated deployments. The re
 
 ### Automatic Updates
 
-When CertKit signals that a new release is available, the keystore downloads the new binary, verifies its SHA256 checksum, swaps it into place, and exits so the service manager (systemd or the Windows SCM) restarts it on the new version. Keystores running in containers are not self-updated.
+An account admin pushes a new release to the keystore with **Update Now** on CertKit's Settings → Keystore page. On its next poll, the keystore downloads the new binary, verifies its SHA256 checksum, swaps it into place, and exits so the service manager (systemd or the Windows SCM) restarts it on the new version. Keystores running in containers are not self-updated, and keystore v1 can't update itself: see [Upgrading from v1](#upgrading-from-v1).
 
 On Windows the update must also carry a valid Authenticode signature from the same publisher that signed the running keystore; otherwise it is rejected and the current version keeps running. Unsigned builds therefore never update themselves.
 

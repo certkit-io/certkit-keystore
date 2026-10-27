@@ -170,6 +170,53 @@ func TestStatusPageGroupsCollections(t *testing.T) {
 	}
 }
 
+func TestStatusPageLayout(t *testing.T) {
+	setupStatusPage(t)
+	storeIssuedCert(t, "col1", "first", "first.example.com")
+	RecordPoll(&api.PollResponse{Collections: []api.PollCollection{
+		{Id: "col1", Name: "Production", Certificates: []api.PollCertificate{{CustomCertId: "first"}}},
+	}}, []api.UpdateStatusItem{
+		{CollectionId: "col1", CustomCertId: "first", Status: api.CertStatuses.Synced},
+	})
+
+	body := getStatusPage(t)
+
+	// The keystore block comes first, then the certificates, then the details.
+	last := -1
+	for _, s := range []string{"<h2>Keystore</h2>", ">Production</a>", "<h2>CA &amp; TLS</h2>", "<h2>Host</h2>"} {
+		i := strings.Index(body, s)
+		if i < 0 {
+			t.Fatalf("page is missing %q", s)
+		}
+		if i < last {
+			t.Fatalf("%q is out of order", s)
+		}
+		last = i
+	}
+
+	// The keystore block starts with the check-in, and the two base URLs
+	// are next to each other.
+	keystore := body[strings.Index(body, "<h2>Keystore</h2>"):strings.Index(body, ">Production</a>")]
+	if !strings.HasPrefix(keystore[strings.Index(keystore, "<dt>"):], "<dt>Checked in</dt>") {
+		t.Error("the keystore block doesn't start with the check-in")
+	}
+	urls := keystore[strings.Index(keystore, "<dt>Keystore Base URL</dt>"):]
+	if next := strings.Index(urls[1:], "<dt>"); !strings.HasPrefix(urls[1+next:], "<dt>CertKit Base URL</dt>") {
+		t.Error("the CertKit base URL isn't right under the keystore base URL")
+	}
+	for _, gone := range []string{"<dt>Account</dt>", "<dt>Assigned</dt>", "<h2>CertKit</h2>"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("page still has %q", gone)
+		}
+	}
+
+	ca, err := readCertFile(filepath.Join(caDir(), caCertFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertContains(t, body, fingerprint(ca.Raw), "<strong>Agents</strong>", "renews itself 30 days before it expires")
+}
+
 func TestStatusPageShowsPrivateCAs(t *testing.T) {
 	setupStatusPage(t)
 	certPEM, keyPEM, err := keystoreCrypto.GenerateCA()
