@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Logs &middot; CertKit Keystore</title>
+<link rel="icon" type="image/png" href="{{.CertkitURL}}/favicon-128x128.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Mono:wght@400;500;700&display=swap">
+<style>
+/* Colors, type and components match status_page.html. The console is dark in
+   both themes, like the deployment logs in CertKit. */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --text: #373c44;
+  --heading: #181c25;
+  --muted: #646b79;
+  --line: #e7eaf0;
+  --shadow: rgba(129, 145, 181, 0.18);
+  --primary: #047878;
+  --primary-hover: #025d5d;
+  --primary-underline: rgba(4, 120, 120, 0.5);
+  --console: #2d2d2d;
+  --console-bar: #242424;
+  --console-line: #474747;
+  --console-text: #ececec;
+  --console-muted: #a3a3a3;
+  --console-accent: #0ab1b1;
+  --console-bad: #f38f79;
+  --console-bad-mark: #f06048;
+  --console-bad-bg: rgba(240, 96, 72, 0.12);
+  --console-ok: #ffbf00;
+  --console-ok-bg: rgba(255, 191, 0, 0.07);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #13171f;
+    --text: #c2c7d0;
+    --heading: #dfe3eb;
+    --muted: #8a93a3;
+    --line: #333c4e;
+    --shadow: rgba(129, 145, 181, 0.3);
+    --primary: #0ab1b1;
+    --primary-hover: #0ccece;
+    --primary-underline: rgba(10, 177, 177, 0.5);
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 "Noto Sans Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+a { color: var(--primary); text-decoration-color: var(--primary-underline); text-underline-offset: 3px; }
+a:hover { color: var(--primary-hover); text-decoration-color: currentColor; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 0 24px; }
+
+.topbar { border-bottom: 1px solid var(--line); }
+.topbar .wrap { display: flex; align-items: center; gap: 14px; min-height: 64px; }
+.logo { display: block; height: 30px; width: auto; }
+.crumb { color: var(--muted); }
+.crumb a { color: inherit; }
+.crumb a:hover { color: var(--primary-hover); }
+.topbar .manage { margin-left: auto; white-space: nowrap; }
+.logout { margin: 0; }
+.logout button { padding: 3px 12px; border: 1px solid var(--line); border-radius: 3px; background: none; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
+.logout button:hover { border-color: var(--primary); color: var(--primary); }
+
+.hero { margin: 24px 0 22px; }
+.back { font-size: 14px; }
+h1 { margin: 6px 0 0; color: var(--heading); font-size: 28px; line-height: 1.2; }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; color: var(--muted); font-size: 14px; }
+.meta span { overflow-wrap: anywhere; }
+
+.console {
+  color-scheme: dark;
+  margin-bottom: 14px;
+  background: var(--console);
+  color: var(--console-text);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--console-line);
+  background: var(--console-bar);
+  font-size: 13px;
+}
+.tabs { display: flex; }
+.tab { padding: 3px 12px; border: 1px solid var(--console-line); color: var(--console-text); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.tab + .tab { margin-left: -1px; }
+.tab:hover { position: relative; border-color: var(--console-muted); color: #fff; }
+.tab.on { position: relative; border-color: #fff; background: #fff; color: var(--console); }
+.tab .n { margin-left: 4px; font-weight: 400; opacity: 0.75; }
+.search { display: flex; flex: 1 1 260px; max-width: 480px; margin: 0; }
+.search input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--console-line);
+  border-radius: 0;
+  appearance: none;
+  background: #1b1b1b;
+  color: #fff;
+  font: inherit;
+}
+.search input::placeholder { color: #8a8a8a; }
+.search input:focus { outline: none; border-color: var(--console-accent); }
+.search button { margin-left: -1px; padding: 3px 12px; border: 1px solid var(--console-line); border-radius: 0; background: #3a3a3a; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.search button:hover { background: #4a4a4a; }
+.bar a.clear { color: var(--console-muted); text-decoration-color: currentColor; }
+.bar a.clear:hover { color: #fff; }
+.download { margin-left: auto; padding: 3px 12px; border: 1px solid #fff; color: #fff; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.bar a.download:hover { background: #fff; color: var(--console); }
+
+.log { padding: 4px 0 14px; font-size: 13px; line-height: 1.6; }
+.log ol { margin: 0; padding: 0; list-style: none; }
+.day { margin: 0; padding: 14px 16px 4px; color: var(--console-muted); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.entry { display: grid; grid-template-columns: 8ch minmax(0, 1fr); gap: 18px; padding: 1px 16px 1px 13px; border-left: 3px solid transparent; }
+.entry:hover { background: rgba(255, 255, 255, 0.05); }
+.entry time { color: var(--console-muted); }
+.msg { white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
+.entry.error { border-left-color: var(--console-bad-mark); background: var(--console-bad-bg); }
+.entry.error .msg { color: var(--console-bad); }
+.entry.warning { border-left-color: var(--console-ok); background: var(--console-ok-bg); }
+.entry.warning .msg { color: var(--console-ok); }
+mark { padding: 0 1px; border-radius: 2px; background: var(--console-ok); color: #1b1b1b; }
+.log-message { margin: 0; padding: 36px 16px; color: var(--console-muted); text-align: center; }
+.log-message code { display: block; margin-top: 6px; color: var(--console-bad); overflow-wrap: anywhere; }
+
+.below { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 28px; color: var(--muted); font-size: 13px; }
+footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 600px) {
+  body { font-size: 14px; }
+  .wrap { padding: 0 16px; }
+  .topbar .wrap { flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
+  h1 { font-size: 22px; }
+  .bar { position: static; padding: 12px; }
+  .download { margin-left: 0; }
+  .entry { gap: 10px; padding-right: 12px; padding-left: 9px; }
+  .day { padding-right: 12px; padding-left: 12px; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <a href="{{.CertkitURL}}">
+      <picture>
+        <source srcset="{{.CertkitURL}}/images/brand/certkit-logo-dark.svg" media="(prefers-color-scheme: dark)">
+        <img class="logo" src="{{.CertkitURL}}/images/brand/certkit-logo.svg" alt="CertKit">
+      </picture>
+    </a>
+    <span class="crumb">/ <a href="/">keystore</a> / logs</span>
+    <a class="manage" href="{{.ManagementURL}}">Manage in CertKit &rarr;</a>
+    <form class="logout" method="post" action="/auth/logout"><button type="submit">Logout</button></form>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <a class="back" href="/">&larr; Back to status</a>
+    <h1>Logs</h1>
+    <div class="meta">
+      <span>{{.Source}}</span>
+      {{if .Size}}<span>{{.Size}}</span>{{end}}
+      <span>newest first, times in {{.Zone}}</span>
+    </div>
+  </section>
+
+  <section class="console" aria-label="Log">
+    {{if .Err}}
+    <p class="log-message">Couldn't read the log.<code>{{.Err}}</code></p>
+    {{else}}
+    <div class="bar">
+      <nav class="tabs" aria-label="Entries">
+        <a class="tab{{if not .Problems}} on{{end}}" href="{{.AllURL}}"{{if not .Problems}} aria-current="page"{{end}}>All<span class="n">{{.AllCount}}</span></a>
+        <a class="tab{{if .Problems}} on{{end}}" href="{{.ProblemsURL}}"{{if .Problems}} aria-current="page"{{end}}>Problems<span class="n">{{.ProblemCount}}</span></a>
+      </nav>
+      <form class="search" method="get" action="/logs" role="search">
+        {{if .Problems}}<input type="hidden" name="problems" value="1">{{end}}
+        <input type="search" name="q" value="{{.Query}}" placeholder="Search the log" aria-label="Search the log">
+        <button type="submit">Search</button>
+      </form>
+      {{if .Query}}<a class="clear" href="{{.ClearURL}}">Clear search</a>{{end}}
+      <a class="download" href="/logs/download">Download .log</a>
+    </div>
+    {{if .Empty}}
+    <p class="log-message">{{.Empty}}</p>
+    {{else}}
+    <div class="log">
+      {{range .Days}}
+      <section>
+        {{if .Date}}<h2 class="day">{{.Date}}</h2>{{end}}
+        <ol>
+          {{range .Lines}}<li class="entry {{.Level}}"><time{{if .Exact}} title="{{.Exact}}"{{end}}>{{.Time}}</time><span class="msg">{{range .Parts}}{{if .Match}}<mark>{{.Text}}</mark>{{else}}{{.Text}}{{end}}{{end}}</span></li>
+          {{end}}
+        </ol>
+      </section>
+      {{end}}
+    </div>
+    {{end}}
+    {{end}}
+  </section>
+
+  {{if or .Summary .Partial}}
+  <p class="below">
+    {{if .Summary}}<span>{{.Summary}} <a href="{{.ShowAllURL}}">Show all</a></span>{{end}}
+    {{if .Partial}}<span>{{.Partial}}</span>{{end}}
+  </p>
+  {{end}}
+</main>
+
+<footer class="wrap">
+  CertKit Keystore {{.Version.Version}} &middot;
+  <a href="https://github.com/certkit-io/certkit-keystore">source</a> &middot;
+  generated {{.Generated}}
+</footer>
+</body>
+</html>

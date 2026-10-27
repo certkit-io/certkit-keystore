@@ -229,15 +229,5 @@ func renderLoginPage(w http.ResponseWriter, status int, page loginPage) {
 		http.Error(w, "failed to render login page", http.StatusInternalServerError)
 		return
 	}
-
-	h := w.Header()
-	h.Set("Content-Type", "text/html; charset=utf-8")
-	h.Set("Cache-Control", "no-store")
-	h.Set("Referrer-Policy", "no-referrer")
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", "default-src 'none'; img-src "+certkitOrigin()+
-		"; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"+
-		"; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
-	w.WriteHeader(status)
-	w.Write(buf.Bytes())
+	writeHTML(w, status, buf.Bytes(), "'none'")
 }

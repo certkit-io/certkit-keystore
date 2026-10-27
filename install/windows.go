@@ -18,7 +18,11 @@ import (
 )
 
 const (
-	DefaultConfigPath         = `C:\ProgramData\CertKit\certkit-keystore\config.json`
+	// ConfigPath is where the keystore's config is. It can't be moved.
+	ConfigPath = `C:\ProgramData\CertKit\certkit-keystore\config.json`
+	// LogPath is the log file the keystore writes. On Linux it logs to
+	// journald instead.
+	LogPath                   = `C:\ProgramData\CertKit\certkit-keystore\certkit-keystore.log`
 	DefaultStorageDir         = `C:\ProgramData\CertKit\certkit-keystore\certificates`
 	defaultServiceDescription = "CertKit Keystore service"
 	windowsEventLogSource     = "CertKit"
@@ -43,9 +47,6 @@ func InstallService(configPath string) {
 	if !filepath.IsAbs(exe) {
 		log.Fatalf("executable path must be absolute: %s", exe)
 	}
-	if !filepath.IsAbs(configPath) {
-		log.Fatalf("config path must be an absolute path: %s", configPath)
-	}
 
 	manager, err := mgr.Connect()
 	if err != nil {
@@ -66,8 +67,6 @@ func InstallService(configPath string) {
 			},
 			"run",
 			"--service",
-			"--config",
-			configPath,
 		)
 		if err != nil {
 			log.Fatalf("failed to create service %s: %v", ServiceName, err)
@@ -75,7 +74,7 @@ func InstallService(configPath string) {
 		defer svcObj.Close()
 	} else {
 		defer svcObj.Close()
-		binLine := fmt.Sprintf(`"%s" run --service --config "%s"`, exe, configPath)
+		binLine := fmt.Sprintf(`"%s" run --service`, exe)
 		current, err := svcObj.Config()
 		if err != nil {
 			log.Fatalf("failed to read service config %s: %v", ServiceName, err)

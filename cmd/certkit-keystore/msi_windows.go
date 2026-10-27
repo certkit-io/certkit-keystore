@@ -21,22 +21,18 @@ import (
 // deferred actions do not inherit the installing user's environment.
 func bootstrapConfigCmd(args []string) {
 	fs := flag.NewFlagSet("bootstrap-config", flag.ExitOnError)
-	configPath := fs.String("config", keystoreInstall.DefaultConfigPath, "path to config file")
 	key := fs.String("key", "", "registration key, required when no config exists")
 	host := fs.String("host", "", "keystore hostname or IP, required when no config exists")
 	port := fs.String("port", config.DefaultKeystorePort, "keystore listen port")
 	storageDir := fs.String("storage-dir", keystoreInstall.DefaultStorageDir, "directory for key storage")
 	fs.Parse(args)
+	path := configPath()
 
-	if !filepath.IsAbs(*configPath) {
-		log.Fatalf("--config must be an absolute path: %s", *configPath)
-	}
-
-	if err := ensureMsiConfig(*configPath, *key, *host, *port, *storageDir); err != nil {
+	if err := ensureMsiConfig(path, *key, *host, *port, *storageDir); err != nil {
 		log.Fatalf("bootstrap-config failed: %v", err)
 	}
 
-	keystoreInstall.OpenFirewallForConfig(*configPath)
+	keystoreInstall.OpenFirewallForConfig(path)
 }
 
 // ensureMsiConfig applies installCmd's rules without prompting: an initialized
@@ -98,14 +94,14 @@ func ensureMsiConfig(configPath, key, host, port, storageDir string) error {
 // block or roll back an uninstall, so this always exits 0.
 func msiCleanupCmd(args []string) {
 	fs := flag.NewFlagSet("msi-cleanup", flag.ExitOnError)
-	configPath := fs.String("config", keystoreInstall.DefaultConfigPath, "path to config file")
 	fs.Parse(args)
+	path := configPath()
 
-	keystoreInstall.CloseFirewallForConfig(*configPath)
+	keystoreInstall.CloseFirewallForConfig(path)
 
-	if err := os.Remove(*configPath); err != nil && !os.IsNotExist(err) {
-		log.Printf("Warning: failed to remove config file %s: %v", *configPath, err)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		log.Printf("Warning: failed to remove config file %s: %v", path, err)
 	} else if err == nil {
-		log.Printf("Removed config file %s", *configPath)
+		log.Printf("Removed config file %s", path)
 	}
 }

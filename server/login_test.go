@@ -216,6 +216,15 @@ func TestExpiredAndUnknownSessionsGetTheLoginPage(t *testing.T) {
 	}
 }
 
+func TestPagesNeedALogin(t *testing.T) {
+	setupLogin(t)
+
+	for _, path := range []string{"/", "/logs", "/logs?problems=1", "/logs/download"} {
+		res := browse(newMux().ServeHTTP, http.MethodGet, "https://keystore.example.com"+path)
+		assertLoginPage(t, res, http.StatusOK, "Login with CertKit")
+	}
+}
+
 func TestLogoutEndsOnlyTheKeystoreSession(t *testing.T) {
 	setupLogin(t)
 	sessions["s1"] = time.Now().Add(time.Hour)

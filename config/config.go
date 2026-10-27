@@ -15,6 +15,10 @@ var CurrentConfig Config
 var CurrentPath string
 var CurrentVersion VersionInfo
 
+// CurrentLogPath is the log file the keystore writes on Windows, which the
+// status page's logs page shows. On Linux the log goes to journald.
+var CurrentLogPath string
+
 // ConfigVersion is the config format this keystore writes. Version 1 configs
 // (no version field) belonged to a single collection; from version 2 a
 // keystore serves whichever collections CertKit assigns to it.

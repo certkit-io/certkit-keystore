@@ -151,23 +151,23 @@ func validateStorageDir(dir string) (missing bool, err error) {
 func installCmd(args []string) {
 	fs := flag.NewFlagSet("install", flag.ExitOnError)
 	key := fs.String("key", "", "registration key in format {account_id}.{keystore_id} (or set CERTKIT_REGISTRATION_KEY)")
-	configPath := fs.String("config", keystoreInstall.DefaultConfigPath, "path to config file")
 	host := fs.String("host", "", "keystore hostname or IP (e.g. keystore.example.com or 192.168.1.50)")
 	port := fs.String("port", config.DefaultKeystorePort, "keystore listen port")
 	storageDir := fs.String("storage-dir", keystoreInstall.DefaultStorageDir, "directory for key storage")
 	noService := fs.Bool("no-service", os.Getenv("KEYSTORE_NO_SERVICE") != "", "skip service creation/update")
 	fs.Parse(args)
+	path := configPath()
 
 	v := Version()
 	log.Printf("certkit-keystore %s (commit: %s, built: %s)", v.Version, v.Commit, v.Date)
 
 	// If a config already exists and has been initialized, skip creation
-	existing, err := config.ReadConfig(*configPath)
+	existing, err := config.ReadConfig(path)
 	if err == nil && existing.Keystore != nil && existing.Keystore.Initialized {
 		if existing.Version < config.ConfigVersion {
-			log.Printf("Found a v1 keystore config at %s; the keystore is upgraded to v2 when the service restarts", *configPath)
+			log.Printf("Found a v1 keystore config at %s; the keystore is upgraded to v2 when the service restarts", path)
 		} else {
-			log.Printf("Config at %s is already initialized, skipping configuration", *configPath)
+			log.Printf("Config at %s is already initialized, skipping configuration", path)
 		}
 	} else {
 		scanner := bufio.NewScanner(os.Stdin)
@@ -265,7 +265,7 @@ func installCmd(args []string) {
 			fmt.Printf("  Host:               %s\n", *host)
 			fmt.Printf("  Port:               %s\n", *port)
 			fmt.Printf("  Storage directory:   %s\n", *storageDir)
-			fmt.Printf("  Config file:         %s\n", *configPath)
+			fmt.Printf("  Config file:         %s\n", path)
 			fmt.Println()
 			fmt.Print("Accept? [Y]es / [n]o / [r]estart: ")
 			choice := strings.ToLower(scanLine(scanner))
@@ -286,15 +286,15 @@ func installCmd(args []string) {
 		}
 		fmt.Println()
 
-		if err := config.CreateInitialConfig(*configPath, keyVal, *host, *port, *storageDir, keystoreInstall.ServiceName); err != nil {
+		if err := config.CreateInitialConfig(path, keyVal, *host, *port, *storageDir, keystoreInstall.ServiceName); err != nil {
 			log.Fatalf("Install failed: %v", err)
 		}
-		log.Printf("Config written to %s", *configPath)
+		log.Printf("Config written to %s", path)
 	}
 
 	if *noService {
 		log.Println("Skipping service install (--no-service)")
 	} else {
-		keystoreInstall.InstallService(*configPath)
+		keystoreInstall.InstallService(path)
 	}
 }

@@ -38,3 +38,4 @@ dist/
 
 test-storage/
 config.json
+certkit-keystore.log

@@ -87,6 +87,10 @@ a:hover { color: var(--primary-hover); text-decoration-color: currentColor; }
 .hero { display: flex; align-items: center; gap: 18px; margin: 28px 0 22px; }
 h1 { margin: 0; color: var(--heading); font-size: 28px; line-height: 1.2; }
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-top: 8px; color: var(--muted); font-size: 14px; }
+.hero .button { margin-left: auto; }
+.button { padding: 7px 16px; border: 1px solid var(--primary); box-shadow: 3px 3px 0 var(--shadow); color: var(--primary); font-size: 14px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.button:hover { border-color: var(--primary-hover); }
+.button:active { box-shadow: 1px 1px 0 var(--shadow); transform: translate(2px, 2px); }
 
 .dot { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--dot-none); }
 .dot.good { background: var(--dot-good); }
@@ -148,6 +152,8 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
   .wrap { padding: 0 16px; }
   .topbar .wrap { flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
   .box { padding: 16px; }
+  .hero { display: grid; grid-template-columns: auto minmax(0, 1fr); row-gap: 14px; }
+  .hero .button { grid-column: 2; justify-self: start; margin-left: 0; }
   h1 { font-size: 22px; }
   .hide-sm { display: none; }
   .field { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 4px 0; }
@@ -182,6 +188,7 @@ footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size:
         {{if .LastCheck}}<span>checked in {{.LastCheck}}</span>{{end}}
       </div>
     </div>
+    <a class="button" href="/logs">Show logs</a>
   </section>
 
   {{if .PollError}}

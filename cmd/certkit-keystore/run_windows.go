@@ -5,19 +5,22 @@ package main
 import (
 	"bytes"
 	"flag"
+	"io"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"time"
 
+	"github.com/certkit-io/certkit-keystore/config"
 	keystoreInstall "github.com/certkit-io/certkit-keystore/install"
 	"golang.org/x/sys/windows/svc"
 )
 
 func runCmd(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	configPath := fs.String("config", keystoreInstall.DefaultConfigPath, "path to config file")
+	// Services installed by earlier versions still pass the config's path.
+	fs.String("config", "", "unused: the config is always at the standard path")
 	forceService := fs.Bool("service", false, "force service mode (used by SCM)")
 	fs.Parse(args)
 
@@ -25,12 +28,12 @@ func runCmd(args []string) {
 
 	if *forceService || (err == nil && isService) {
 		log.Printf("Running as Windows service...")
-		runWindowsService(*configPath)
+		runWindowsService(configPath())
 		return
 	}
 
 	// Foreground mode
-	setLogOutputWithEventLog(os.Stdout)
+	initLogFile(logPath(), os.Stdout)
 
 	stopCh := make(chan struct{})
 	sigCh := make(chan os.Signal, 2)
@@ -41,7 +44,7 @@ func runCmd(args []string) {
 		close(stopCh)
 	}()
 
-	runKeystore(*configPath, stopCh)
+	runKeystore(configPath(), stopCh)
 }
 
 func runWindowsService(configPath string) {
@@ -59,7 +62,7 @@ func (s *windowsService) Execute(_ []string, r <-chan svc.ChangeRequest, changes
 
 	changes <- svc.Status{State: svc.StartPending}
 
-	initServiceLogging(s.configPath)
+	initLogFile(logPath(), io.Discard)
 
 	stopCh := make(chan struct{})
 	done := make(chan struct{})
@@ -96,20 +99,38 @@ const (
 	keepLines  = 10000
 )
 
-func initServiceLogging(configPath string) {
-	logFile := filepath.Join(filepath.Dir(configPath), "certkit-keystore.log")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return
+// logPath is the log file, next to the config: in the standard location,
+// except in dev builds.
+func logPath() string {
+	if dir := devDir(); dir != "" {
+		return filepath.Join(dir, "certkit-keystore.log")
 	}
-	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	setLogOutputWithEventLog(f)
-	go logTruncator(logFile, f)
+	return keystoreInstall.LogPath
 }
 
-func logTruncator(logFile string, current *os.File) {
+// initLogFile sends the log to console and to logFile, which the status
+// page's logs page shows. If the file can't be opened, the log goes to
+// console only.
+func initLogFile(logFile string, console io.Writer) {
+	config.CurrentLogPath = logFile
+	f, err := openLogFile(logFile)
+	if err != nil {
+		setLogOutputWithEventLog(console)
+		log.Printf("Not writing a log file: %v", err)
+		return
+	}
+	setLogOutputWithEventLog(io.MultiWriter(console, f))
+	go logTruncator(logFile, f, console)
+}
+
+func openLogFile(logFile string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(logFile), 0o755); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+}
+
+func logTruncator(logFile string, current *os.File, console io.Writer) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -134,7 +155,7 @@ func logTruncator(logFile string, current *os.File) {
 		if err != nil {
 			continue
 		}
-		setLogOutputWithEventLog(newFile)
+		setLogOutputWithEventLog(io.MultiWriter(console, newFile))
 		old := current
 		current = newFile
 		old.Close()

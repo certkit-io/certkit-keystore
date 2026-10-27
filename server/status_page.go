@@ -209,7 +209,13 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to render status page", http.StatusInternalServerError)
 		return
 	}
+	writeHTML(w, http.StatusOK, buf.Bytes(), "'self'")
+}
 
+// writeHTML sends one of the keystore's pages. Pages run no scripts and load
+// nothing but CertKit's logo and Google's fonts; formAction is where their
+// forms may go.
+func writeHTML(w http.ResponseWriter, status int, page []byte, formAction string) {
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
@@ -217,8 +223,9 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; img-src "+certkitOrigin()+
 		"; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"+
-		"; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
-	w.Write(buf.Bytes())
+		"; base-uri 'none'; form-action "+formAction+"; frame-ancestors 'none'")
+	w.WriteHeader(status)
+	w.Write(page)
 }
 
 func certkitBaseURL() string {

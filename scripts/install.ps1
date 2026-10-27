@@ -158,7 +158,7 @@ function Install-Msi {
     Write-Host ""
     Write-Host "Running certkit-keystore configuration..."
     Write-Host ""
-    & $exePath install --no-service --config $ConfigPath
+    & $exePath install --no-service
     if ($LASTEXITCODE -ne 0) {
         throw "certkit-keystore configuration failed with exit code $LASTEXITCODE."
     }

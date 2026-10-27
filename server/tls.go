@@ -229,20 +229,27 @@ func (m *TLSManager) StartServer() error {
 		GetCertificate: m.GetCertificate,
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", requireLogin(handleRoot))
-	mux.HandleFunc("GET /auth/login", handleLogin)
-	mux.HandleFunc("GET /auth/callback", handleLoginCallback)
-	mux.HandleFunc("POST /auth/logout", handleLogout)
-	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-certificate", handleFetchCertificate)
-	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-pfx", handleFetchPfx)
-
 	srv := &http.Server{
 		Addr:      ":" + cfg.Keystore.Port,
-		Handler:   mux,
+		Handler:   newMux(),
 		TLSConfig: tlsConfig,
 	}
 
 	log.Printf("Starting HTTPS server on :%s", cfg.Keystore.Port)
 	return srv.ListenAndServeTLS("", "")
+}
+
+// newMux routes the keystore's requests. Its pages are for browsers logged in
+// through CertKit; CertKit validates each agent request.
+func newMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", requireLogin(handleRoot))
+	mux.HandleFunc("GET /logs", requireLogin(handleLogs))
+	mux.HandleFunc("GET /logs/download", requireLogin(handleLogsDownload))
+	mux.HandleFunc("GET /auth/login", handleLogin)
+	mux.HandleFunc("GET /auth/callback", handleLoginCallback)
+	mux.HandleFunc("POST /auth/logout", handleLogout)
+	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-certificate", handleFetchCertificate)
+	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-pfx", handleFetchPfx)
+	return mux
 }

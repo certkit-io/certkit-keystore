@@ -217,6 +217,11 @@ func TestStatusPageLayout(t *testing.T) {
 	assertContains(t, body, fingerprint(ca.Raw), "<strong>Agents</strong>", "renews itself 30 days before it expires")
 }
 
+func TestStatusPageHasAShowLogsButton(t *testing.T) {
+	setupStatusPage(t)
+	assertContains(t, getStatusPage(t), `<a class="button" href="/logs">Show logs</a>`)
+}
+
 func TestStatusPageShowsPrivateCAs(t *testing.T) {
 	setupStatusPage(t)
 	certPEM, keyPEM, err := keystoreCrypto.GenerateCA()
