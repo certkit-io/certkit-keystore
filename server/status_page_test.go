@@ -25,6 +25,7 @@ import (
 func setupStatusPage(t *testing.T) {
 	t.Helper()
 	setupServer(t)
+	config.CurrentConfig.Keystore.Id = "ks1"
 	setEncryptionKey(t)
 	prevPoll := lastPoll
 	t.Cleanup(func() { lastPoll = prevPoll })
@@ -129,7 +130,7 @@ func TestStatusPageShowsCertificates(t *testing.T) {
 		"1 certificate needs attention",
 		"CA expires", "keystore.example.com",
 		">Production</a>", "/app/col1/keystore", "/app/col1/certificates/stored", "/app/col2/certificates/orphan",
-		"/settings/keystore",
+		`href="/settings/keystore/ks1"`,
 	)
 }
 

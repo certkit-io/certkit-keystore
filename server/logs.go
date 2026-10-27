@@ -244,7 +244,7 @@ func journalError(err error) error {
 func buildLogsPage(q string, problems, all bool, now time.Time) logsPage {
 	page := logsPage{
 		CertkitURL:    certkitBaseURL(),
-		ManagementURL: certkitBaseURL() + "/settings/keystore",
+		ManagementURL: managementURL(),
 		Version:       config.CurrentVersion,
 		Zone:          now.Format("MST"),
 		Query:         q,

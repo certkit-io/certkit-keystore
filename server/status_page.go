@@ -232,6 +232,12 @@ func certkitBaseURL() string {
 	return strings.TrimRight(config.CurrentConfig.CertkitBaseUrl, "/")
 }
 
+// managementURL is this keystore's settings page in CertKit. It names the
+// keystore, so the link still leads to it if an account ever has several.
+func managementURL() string {
+	return certkitBaseURL() + "/settings/keystore/" + url.PathEscape(config.CurrentConfig.Keystore.Id)
+}
+
 // certkitOrigin is where the page's logo and favicon come from.
 func certkitOrigin() string {
 	u, err := url.Parse(config.CurrentConfig.CertkitBaseUrl)
@@ -254,7 +260,7 @@ func buildStatusPage(now time.Time) statusPage {
 	page := statusPage{
 		Version:       config.CurrentVersion,
 		CertkitURL:    certkitBaseURL(),
-		ManagementURL: certkitBaseURL() + "/settings/keystore",
+		ManagementURL: managementURL(),
 		Port:          cfg.Keystore.Port,
 		Uptime:        formatUptime(now.Sub(startedAt)),
 		Health:        pageHealth(poll, groups),

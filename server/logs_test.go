@@ -119,6 +119,7 @@ func TestLogsPageShowsTheNewestEntriesFirst(t *testing.T) {
 		"&lt;script&gt;alert(1)&lt;/script&gt;",
 		`All<span class="n">6</span>`, `Problems<span class="n">2</span>`,
 		`href="/logs/download"`, "newest first, times in UTC", "certkit-keystore.log",
+		`href="https://app.certkit.test/settings/keystore/ks1"`,
 	)
 	if strings.Contains(body, "<script>") {
 		t.Error("an entry wasn't escaped")
