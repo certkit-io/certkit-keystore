@@ -91,7 +91,7 @@
         <Control Id="KeyLabel" Type="Text" X="20" Y="52" Width="330" Height="10" NoPrefix="no" Text="&amp;Registration key:" />
         <Control Id="KeyEdit" Type="Edit" X="20" Y="63" Width="330" Height="17" Property="REGISTRATIONKEY" Text="{200}" />
 
-        <Control Id="HostLabel" Type="Text" X="20" Y="86" Width="330" Height="10" NoPrefix="no" Text="&amp;Host agents use to reach this keystore (hostname or IP):" />
+        <Control Id="HostLabel" Type="Text" X="20" Y="86" Width="330" Height="10" NoPrefix="no" Text="What is the FQDN, &amp;hostname, or IP of this machine? (Must be accessible by agents)" />
         <Control Id="HostEdit" Type="Edit" X="20" Y="97" Width="330" Height="17" Property="HOST" Text="{253}" />
 
         <Control Id="PortLabel" Type="Text" X="20" Y="120" Width="330" Height="10" NoPrefix="no" Text="&amp;Port:" />

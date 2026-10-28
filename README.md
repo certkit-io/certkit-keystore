@@ -154,6 +154,8 @@ Restart-Service certkit-keystore
 # File log: C:\ProgramData\CertKit\certkit-keystore\certkit-keystore.log
 ```
 
+On Linux the keystore logs only to journald. On Windows the file log keeps at least its last 10,000 lines. The status page's **Show logs** button shows the log, newest entries first, and downloads it.
+
 
 ## License
 

@@ -62,6 +62,7 @@ func InstallService(configPath string) {
 			mgr.Config{
 				DisplayName:      ServiceName,
 				StartType:        mgr.StartAutomatic,
+				DelayedAutoStart: true,
 				ServiceStartName: "LocalSystem",
 				Description:      defaultServiceDescription,
 			},
@@ -81,6 +82,7 @@ func InstallService(configPath string) {
 		}
 		current.DisplayName = ServiceName
 		current.StartType = mgr.StartAutomatic
+		current.DelayedAutoStart = true
 		current.ServiceStartName = "LocalSystem"
 		current.BinaryPathName = binLine
 		current.Description = defaultServiceDescription

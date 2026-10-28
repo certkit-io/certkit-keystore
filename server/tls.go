@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -233,10 +234,35 @@ func (m *TLSManager) StartServer() error {
 		Addr:      ":" + cfg.Keystore.Port,
 		Handler:   newMux(),
 		TLSConfig: tlsConfig,
+		ErrorLog:  log.New(serverErrorWriter{}, "", 0),
 	}
 
 	log.Printf("Starting HTTPS server on :%s", cfg.Keystore.Port)
 	return srv.ListenAndServeTLS("", "")
+}
+
+// serverErrorWriter passes the HTTPS server's errors on to the keystore's log,
+// except for handshakes that a client ended because it doesn't trust the
+// keystore's certificate.
+type serverErrorWriter struct{}
+
+func (serverErrorWriter) Write(p []byte) (int, error) {
+	if line := string(p); !untrustedCertError(line) {
+		log.Print(line)
+	}
+	return len(p), nil
+}
+
+// untrustedCertError reports whether line is the error net/http logs when a
+// browser (or curl) ends the handshake because it doesn't trust the keystore's
+// certificate, which browsers do on every visit: only agents are given the
+// keystore's CA. Go clients, agents among them, send "bad certificate"
+// instead, and that's still logged.
+func untrustedCertError(line string) bool {
+	line = strings.TrimSuffix(line, "\n")
+	return strings.HasPrefix(line, "http: TLS handshake error from ") &&
+		(strings.HasSuffix(line, ": remote error: tls: unknown certificate") ||
+			strings.HasSuffix(line, ": remote error: tls: unknown certificate authority"))
 }
 
 // newMux routes the keystore's requests. Its pages are for browsers logged in
