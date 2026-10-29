@@ -22,6 +22,13 @@ func DetectHostType() string {
 	return "Bare metal"
 }
 
+// IsContainerEnvironment reports whether the process is running inside a
+// container (Docker, Kubernetes, etc.), where the image, not the process,
+// owns the binary.
+func IsContainerEnvironment() bool {
+	return os.Getenv("KUBERNETES_SERVICE_HOST") != "" || isDockerEnvironment()
+}
+
 func isDockerEnvironment() bool {
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return true

@@ -9,6 +9,7 @@ import (
 	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
+	"github.com/certkit-io/certkit-keystore/storage"
 )
 
 const (
@@ -22,9 +23,21 @@ func caDir() string {
 	return filepath.Join(config.CurrentConfig.Keystore.StorageDir, "ca")
 }
 
+// updateCAInfo sends the CA cert to CertKit; tests replace it.
+var updateCAInfo = api.UpdateCAInfo
+
+// CACertPEM returns the keystore's CA certificate.
+func CACertPEM() (string, error) {
+	data, err := os.ReadFile(filepath.Join(caDir(), caCertFile))
+	if err != nil {
+		return "", fmt.Errorf("read CA cert: %w", err)
+	}
+	return string(data), nil
+}
+
 // EnsureCA checks if a CA cert exists on disk. If not, generates a new
-// ECDSA P-256 CA, saves both cert and key to disk (0600), and sends the
-// CA cert to CertKit via /update-ca-info.
+// ECDSA P-256 CA, saves the cert and the encrypted key to disk (0600), and
+// sends the CA cert to CertKit via /update-ca-info.
 func EnsureCA() error {
 	dir := caDir()
 	certPath := filepath.Join(dir, caCertFile)
@@ -51,12 +64,12 @@ func EnsureCA() error {
 	if err := os.WriteFile(certPath, []byte(certPEM), 0o600); err != nil {
 		return fmt.Errorf("write CA cert: %w", err)
 	}
-	if err := os.WriteFile(keyPath, []byte(keyPEM), 0o600); err != nil {
+	if err := storage.WritePrivateKey(keyPath, []byte(keyPEM)); err != nil {
 		return fmt.Errorf("write CA key: %w", err)
 	}
 	log.Printf("CA certificate and key saved to %s", dir)
 
-	if err := api.UpdateCAInfo(certPEM); err != nil {
+	if err := updateCAInfo(certPEM); err != nil {
 		log.Printf("Warning: failed to send CA cert to CertKit: %v", err)
 	} else {
 		log.Println("CA certificate sent to CertKit")

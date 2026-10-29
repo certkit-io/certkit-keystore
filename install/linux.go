@@ -3,7 +3,6 @@
 package install
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -13,7 +12,8 @@ import (
 )
 
 const (
-	DefaultConfigPath = "/etc/certkit-keystore/config.json"
+	// ConfigPath is where the keystore's config is. It can't be moved.
+	ConfigPath        = "/etc/certkit-keystore/config.json"
 	DefaultStorageDir = "/etc/certkit-keystore/certificates"
 	DefaultUnitPath   = "/etc/systemd/system"
 )
@@ -33,17 +33,14 @@ func InstallService(configPath string) {
 	if _, err := os.Stat(exe); err != nil {
 		log.Fatalf("binary path does not exist: %s (%v)", exe, err)
 	}
-	if !strings.HasPrefix(configPath, "/") {
-		log.Fatalf("config path must be an absolute path: %s", configPath)
-	}
 
 	if _, err := exec.LookPath("systemctl"); err != nil {
-		log.Printf("systemd not detected; skipping unit install. Run manually: %s run --config %s", exe, configPath)
+		log.Printf("systemd not detected; skipping unit install. Run manually: %s run", exe)
 		return
 	}
 
 	unitPath := filepath.Join(DefaultUnitPath, ServiceName+".service")
-	unitContent := renderSystemdUnit(exe, configPath)
+	unitContent := renderSystemdUnit(exe)
 
 	if err := os.WriteFile(unitPath, []byte(unitContent), 0o644); err != nil {
 		log.Fatalf("failed to write unit file %s: %v", unitPath, err)
@@ -59,10 +56,10 @@ func InstallService(configPath string) {
 	log.Printf("Installed and started %s (unit: %s)", ServiceName, unitPath)
 	log.Printf("   systemctl status %s.service", ServiceName)
 
-	openFirewallForConfig(configPath)
+	OpenFirewallForConfig(configPath)
 }
 
-func renderSystemdUnit(exePath, configPath string) string {
+func renderSystemdUnit(exePath string) string {
 	return fmt.Sprintf(`[Unit]
 Description=CertKit Keystore
 After=network-online.target
@@ -70,7 +67,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%s run --config %s
+ExecStart=%s run
 Restart=always
 RestartSec=5
 
@@ -86,7 +83,7 @@ RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target
-`, shellEscape(exePath), shellEscape(configPath))
+`, shellEscape(exePath))
 }
 
 func shellEscape(s string) string {
@@ -104,7 +101,7 @@ func mustBeRoot() {
 func UninstallService(configPath string) {
 	mustBeRoot()
 
-	closeFirewallForConfig(configPath)
+	CloseFirewallForConfig(configPath)
 
 	unitName := ServiceName + ".service"
 	unitPath := filepath.Join(DefaultUnitPath, unitName)
@@ -137,19 +134,4 @@ func UninstallService(configPath string) {
 	}
 
 	log.Printf("Service %s has been removed", ServiceName)
-}
-
-func runCmdLogged(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	err := cmd.Run()
-	if out.Len() > 0 {
-		log.Printf("Ran command: %s %s:\n%s", name, strings.Join(args, " "), strings.TrimSpace(out.String()))
-	}
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(out.String()))
-	}
-	return nil
 }

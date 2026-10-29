@@ -8,13 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	keystoreInstall "github.com/certkit-io/certkit-keystore/install"
 )
 
 func runCmd(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	configPath := fs.String("config", keystoreInstall.DefaultConfigPath, "path to config file")
+	// Services installed by earlier versions still pass the config's path.
+	fs.String("config", "", "unused: the config is always at the standard path")
 	fs.Parse(args)
 
 	stopCh := make(chan struct{})
@@ -26,5 +25,5 @@ func runCmd(args []string) {
 		close(stopCh)
 	}()
 
-	runKeystore(*configPath, stopCh)
+	runKeystore(configPath(), stopCh)
 }

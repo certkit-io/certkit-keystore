@@ -25,17 +25,23 @@ type ValidateAgentRequestPayload struct {
 	AgentRequest AgentRequest `json:"agent_request"`
 }
 
+// ValidateAgentResponse is CertKit's answer to an agent's fetch request. When
+// it is valid, CollectionId and CertificateId name the certificate the agent
+// may fetch: CertKit has checked that the agent is configured for it and that
+// its collection uses this keystore.
 type ValidateAgentResponse struct {
-	Valid bool `json:"valid"`
+	Valid         bool   `json:"valid"`
+	CollectionId  string `json:"collection_id"`
+	CertificateId string `json:"certificate_id"`
 }
 
-func ValidateAgentRequest(agentSqid string, agentReq AgentRequest) error {
+func ValidateAgentRequest(agentSqid string, agentReq AgentRequest) (*ValidateAgentResponse, error) {
 	cfg := &config.CurrentConfig
 	v := config.CurrentVersion
 
 	priv, err := cfg.Auth.KeyPair.DecodePrivateKey()
 	if err != nil {
-		return fmt.Errorf("decode private key: %w", err)
+		return nil, fmt.Errorf("decode private key: %w", err)
 	}
 
 	payload := ValidateAgentRequestPayload{
@@ -45,46 +51,49 @@ func ValidateAgentRequest(agentSqid string, agentReq AgentRequest) error {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal validate request: %w", err)
+		return nil, fmt.Errorf("marshal validate request: %w", err)
 	}
 
 	url := strings.TrimRight(cfg.CertkitBaseUrl, "/") +
-		"/api/keystore/v1/" + cfg.Keystore.Id + "/validate-agent-request"
+		"/api/keystore/v2/" + cfg.Keystore.Id + "/validate-agent-request"
 
 	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	if err := auth.SignRequest(httpReq, cfg.Keystore.Id, v.Version, priv, time.Now()); err != nil {
-		return fmt.Errorf("sign request: %w", err)
+		return nil, fmt.Errorf("sign request: %w", err)
 	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("http do: %w", err)
+		return nil, fmt.Errorf("http do: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response body: %w", err)
+		return nil, fmt.Errorf("read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("agent validation failed: status=%d body=%s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("agent validation failed: status=%d body=%s", resp.StatusCode, string(respBody))
 	}
 
 	var result ValidateAgentResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return fmt.Errorf("decode validate response: %w", err)
+		return nil, fmt.Errorf("decode validate response: %w", err)
 	}
 
 	if !result.Valid {
-		return fmt.Errorf("agent request not valid")
+		return nil, fmt.Errorf("agent request not valid")
+	}
+	if result.CollectionId == "" || result.CertificateId == "" {
+		return nil, fmt.Errorf("validation did not name a certificate")
 	}
 
-	return nil
+	return &result, nil
 }

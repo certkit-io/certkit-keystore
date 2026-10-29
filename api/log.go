@@ -48,7 +48,7 @@ func LogKeystoreEvent(message string, eventType EventType, isError bool) error {
 	}
 
 	url := strings.TrimRight(cfg.CertkitBaseUrl, "/") +
-		"/api/keystore/v1/" + cfg.Keystore.Id + "/log"
+		"/api/keystore/v2/" + cfg.Keystore.Id + "/log"
 
 	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {

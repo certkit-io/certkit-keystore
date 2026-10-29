@@ -10,13 +10,15 @@ import (
 	"log"
 	"math/big"
 	"net/http"
-	"strings"
 
 	"github.com/certkit-io/certkit-keystore/api"
-	"github.com/certkit-io/certkit-keystore/config"
 	"github.com/certkit-io/certkit-keystore/storage"
 	"software.sslmate.com/src/go-pkcs12"
 )
+
+// validateAgentRequest asks CertKit whether an agent may fetch a certificate;
+// tests replace it.
+var validateAgentRequest = api.ValidateAgentRequest
 
 type fetchCertificateRequest struct {
 	ConfigurationSqid string `json:"config_id"`
@@ -29,16 +31,6 @@ type fetchCertificateResponse struct {
 	CertificateSha1 string `json:"certificate_sha1"`
 }
 
-func handleRoot(w http.ResponseWriter, r *http.Request) {
-	cfg := &config.CurrentConfig
-	fmt.Fprintf(w, "CertKit Keystore %s\n\n", config.CurrentVersion.Version)
-	fmt.Fprintf(w, "Base URL:       %s\n", cfg.Keystore.BaseUrl())
-	fmt.Fprintf(w, "Application ID: %s\n", cfg.Keystore.ApplicationId)
-	fmt.Fprintf(w, "Keystore ID:    %s\n", cfg.Keystore.Id)
-	fmt.Fprintf(w, "Storage Dir:    %s\n\n", cfg.Keystore.StorageDir)
-	fmt.Fprintf(w, "Management URL: %s\n", fmt.Sprintf("%s/app/%s/keystore", strings.TrimRight(cfg.CertkitBaseUrl, "/"), cfg.Keystore.ApplicationId))
-}
-
 func handleFetchCertificate(w http.ResponseWriter, r *http.Request) {
 	agentSqid := r.PathValue("agentSqid")
 	log.Printf("fetch-certificate request from agent %s", agentSqid)
@@ -49,7 +41,8 @@ func handleFetchCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := api.ValidateAgentRequest(agentSqid, buildAgentRequest(r, bodyBytes)); err != nil {
+	validated, err := validateAgentRequest(agentSqid, buildAgentRequest(r, bodyBytes))
+	if err != nil {
 		log.Printf("Agent %s validation failed: %v", agentSqid, err)
 		http.Error(w, "agent authorization failed", http.StatusUnauthorized)
 		return
@@ -61,11 +54,12 @@ func handleFetchCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Agent %s requesting cert %s (config %s)", agentSqid, req.CertificateSqid, req.ConfigurationSqid)
+	log.Printf("Agent %s requesting cert %s (config %s, collection %s)", agentSqid, validated.CertificateId, req.ConfigurationSqid, validated.CollectionId)
 
-	certFiles, err := storage.ReadLatestCert(req.CertificateSqid)
+	// Serve the certificate CertKit validated, not the one the body names.
+	certFiles, err := storage.ReadLatestCert(validated.CollectionId, validated.CertificateId)
 	if err != nil {
-		log.Printf("Failed to read cert %s: %v", req.CertificateSqid, err)
+		log.Printf("Failed to read cert %s: %v", validated.CertificateId, err)
 		http.Error(w, "certificate not found", http.StatusNotFound)
 		return
 	}
@@ -96,7 +90,8 @@ func handleFetchPfx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := api.ValidateAgentRequest(agentSqid, buildAgentRequest(r, bodyBytes)); err != nil {
+	validated, err := validateAgentRequest(agentSqid, buildAgentRequest(r, bodyBytes))
+	if err != nil {
 		log.Printf("Agent %s validation failed: %v", agentSqid, err)
 		http.Error(w, "agent authorization failed", http.StatusUnauthorized)
 		return
@@ -108,11 +103,12 @@ func handleFetchPfx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Agent %s requesting PFX for cert %s (config %s)", agentSqid, req.CertificateSqid, req.ConfigurationSqid)
+	log.Printf("Agent %s requesting PFX for cert %s (config %s, collection %s)", agentSqid, validated.CertificateId, req.ConfigurationSqid, validated.CollectionId)
 
-	certFiles, err := storage.ReadLatestCert(req.CertificateSqid)
+	// Serve the certificate CertKit validated, not the one the body names.
+	certFiles, err := storage.ReadLatestCert(validated.CollectionId, validated.CertificateId)
 	if err != nil {
-		log.Printf("Failed to read cert %s: %v", req.CertificateSqid, err)
+		log.Printf("Failed to read cert %s: %v", validated.CertificateId, err)
 		http.Error(w, "certificate not found", http.StatusNotFound)
 		return
 	}
@@ -120,7 +116,7 @@ func handleFetchPfx(w http.ResponseWriter, r *http.Request) {
 	password := generatePassword(16)
 	pfxData, err := encodePFX(certFiles, password)
 	if err != nil {
-		log.Printf("Failed to encode PFX for %s: %v", req.CertificateSqid, err)
+		log.Printf("Failed to encode PFX for %s: %v", validated.CertificateId, err)
 		http.Error(w, "failed to generate PFX", http.StatusInternalServerError)
 		return
 	}

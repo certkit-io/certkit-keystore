@@ -7,7 +7,17 @@
       "Bash(go build:*)",
       "Bash(powershell -ExecutionPolicy Bypass -File scripts/build.ps1)",
       "Bash(timeout 2 go run ./cmd/certkit-keystore run -config /tmp/ks-config.json || true)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(go vet:*)",
+      "Bash(go test:*)",
+      "Bash(go get:*)",
+      "Bash(curl -s https://api.github.com/repos/certkit-io/certkit-agent/contents/.github/workflows)",
+      "Bash(curl:*)",
+      "Bash(gh api:*)",
+      "Bash(node:*)",
+      "Bash(FILEPATH='C:/Users/Eric/.claude/projects/C--Source-CertKitOther-certkit-keystore/35d4a12f-6d36-44de-b6f4-3915ecc96bac/tool-results/toolu_01Dn7wg8L7rxp58JxnPhtV61.json')",
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"bufio\\\\|Scanner\\\\|ReadString\\\\|ReadLine\\\\|stdin\\\\|fmt.Scan\" /c/Source/CertKitOther/certkit-agent --include=*.go)"
     ]
   }
 }

@@ -1,58 +1,130 @@
-param(
-    [string]$OutputDir = "dist"
+Param(
+    [string]$Out = "dist\bin\certkit-keystore-windows-amd64.exe",
+    [string]$LinuxOut = "dist\bin\certkit-keystore-linux-amd64",
+    [string]$Version = $env:VERSION,
+    [string]$Commit = $env:COMMIT,
+    [string]$BuildDate = $env:BUILD_DATE,
+    # Also build the (unsigned) MSI. Requires the WiX CLI:
+    #   dotnet tool install --global wix --version 6.0.2
+    #   wix extension add -g WixToolset.Util.wixext/6.0.2
+    #   wix extension add -g WixToolset.UI.wixext/6.0.2
+    [switch]$Msi
 )
 
 $ErrorActionPreference = "Stop"
 
-$MODULE = "github.com/certkit-io/certkit-keystore"
-$CMD_PATH = "./cmd/certkit-keystore"
-$BINARY_NAME = "certkit-keystore"
+$root = Resolve-Path (Join-Path $PSScriptRoot "..")
+Push-Location $root
+try {
+    if ([string]::IsNullOrWhiteSpace($Version)) {
+        try {
+            $Version = (git describe --tags --always --dirty)
+        } catch {
+            $Version = "dev"
+        }
+    }
 
-# Resolve version metadata from git
-try { $VERSION = & git describe --tags 2>&1 | Where-Object { $_ -is [string] } } catch { $VERSION = $null }
-if (-not $VERSION -or $VERSION -match "fatal") {
-    try { $VERSION = & git rev-parse --short HEAD 2>&1 } catch { $VERSION = $null }
-    if (-not $VERSION) { $VERSION = "dev" }
+    if ([string]::IsNullOrWhiteSpace($Commit)) {
+        try {
+            $Commit = (git rev-parse --short HEAD)
+        } catch {
+            $Commit = "unknown"
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($BuildDate)) {
+        $BuildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    }
+
+    $outDirs = @(
+        (Split-Path -Parent $Out),
+        (Split-Path -Parent $LinuxOut)
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+
+    foreach ($dir in $outDirs) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+
+    $ldflags = "-s -w -X main.version=$Version -X main.commit=$Commit -X main.buildDate=$BuildDate"
+
+    Write-Host "Building certkit-keystore $Version (commit: $Commit, date: $BuildDate)"
+
+    # Windows resources (.syso): icon + VERSIONINFO + manifest. The generated
+    # file is suffixed _windows_amd64 so only the windows build links it.
+    # Accept X.Y.Z or a prerelease tag X.Y.Z-<suffix>, but NOT git-describe
+    # output (1.1.0-35-gabc123[-dirty]) - dev builds keep 0.0.0.
+    $base = $Version.TrimStart("v")
+    $verNumeric = "0.0.0"
+    if ($base -match '^(\d+\.\d+\.\d+)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$' -and
+        $base -notmatch '-\d+-g[0-9a-f]+(-dirty)?$' -and
+        $base -notmatch '-dirty$') {
+        $verNumeric = $Matches[1]
+    }
+    Write-Host "Generating Windows resources (go-winres, version $verNumeric)"
+    go run github.com/tc-hib/go-winres@v0.3.3 make --in winres/winres.json --arch amd64 --product-version $verNumeric --file-version $verNumeric --out cmd/certkit-keystore/rsrc
+    if ($LASTEXITCODE -ne 0) {
+        throw "go-winres failed with exit code $LASTEXITCODE"
+    }
+
+    function Build-One {
+        param(
+            [Parameter(Mandatory = $true)][string]$GoOs,
+            [Parameter(Mandatory = $true)][string]$GoArch,
+            [Parameter(Mandatory = $true)][string]$Output
+        )
+        $env:CGO_ENABLED = "0"
+        $env:GOOS = $GoOs
+        $env:GOARCH = $GoArch
+        Write-Host "Building $GoOs/$GoArch -> $Output"
+        go build -trimpath -ldflags $ldflags -o $Output .\cmd\certkit-keystore
+        if ($LASTEXITCODE -ne 0) {
+            throw "$GoOs/$GoArch build failed with exit code $LASTEXITCODE"
+        }
+    }
+
+    $oldCgoEnabled = $env:CGO_ENABLED
+    $oldGoos = $env:GOOS
+    $oldGoarch = $env:GOARCH
+    try {
+        Build-One -GoOs "windows" -GoArch "amd64" -Output $Out
+        Build-One -GoOs "linux" -GoArch "amd64" -Output $LinuxOut
+    } finally {
+        $env:CGO_ENABLED = $oldCgoEnabled
+        $env:GOOS = $oldGoos
+        $env:GOARCH = $oldGoarch
+    }
+
+    if ($Msi) {
+        if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
+            throw "WiX CLI not found. Install it with:`n  dotnet tool install --global wix --version 6.0.2`n  wix extension add -g WixToolset.Util.wixext/6.0.2`n  wix extension add -g WixToolset.UI.wixext/6.0.2"
+        }
+        if ($verNumeric -eq "0.0.0") {
+            Write-Warning "MSI ProductVersion is 0.0.0 (no clean vX.Y.Z version available). For install/upgrade testing pass e.g. -Version v1.99.0 and bump it per build - MSIs with identical versions install side by side instead of upgrading."
+        }
+        $msiOut = "dist\msi\certkit-keystore-windows-amd64.msi"
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $msiOut) | Out-Null
+        Write-Host "Building MSI (version $verNumeric) -> $msiOut"
+        wix build packaging\windows\Package.wxs packaging\windows\CertKitUI.wxs `
+            -arch x64 `
+            -d "Version=$verNumeric" `
+            -d "KeystoreExe=$Out" `
+            -ext WixToolset.Util.wixext `
+            -ext WixToolset.UI.wixext `
+            -o $msiOut
+        if ($LASTEXITCODE -ne 0) {
+            throw "wix build failed with exit code $LASTEXITCODE"
+        }
+    }
+
+    # Checksums over everything built (CI computes its own after signing).
+    $outputs = @($Out, $LinuxOut)
+    if ($Msi) { $outputs += $msiOut }
+    $sums = foreach ($file in $outputs) {
+        $hash = (Get-FileHash -Path $file -Algorithm SHA256).Hash.ToLower()
+        "$hash  $(Split-Path -Leaf $file)"
+    }
+    $sums | Set-Content -Encoding ascii "dist\checksums.txt"
+    $sums | ForEach-Object { Write-Host "  $_" }
+} finally {
+    Pop-Location
 }
-try { $COMMIT = & git rev-parse --short HEAD 2>&1 } catch { $COMMIT = $null }
-if (-not $COMMIT) { $COMMIT = "unknown" }
-$BUILD_DATE = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-
-$LDFLAGS = "-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.buildDate=$BUILD_DATE"
-
-Write-Host "Building $BINARY_NAME $VERSION (commit: $COMMIT, date: $BUILD_DATE)"
-Write-Host ""
-
-# Clean and create output directory
-if (Test-Path $OutputDir) {
-    Remove-Item -Recurse -Force $OutputDir
-}
-New-Item -ItemType Directory -Path $OutputDir | Out-Null
-
-$env:CGO_ENABLED = "0"
-
-# Build Windows amd64
-Write-Host "Building windows/amd64..."
-$env:GOOS = "windows"
-$env:GOARCH = "amd64"
-& go build -trimpath -ldflags $LDFLAGS -o "$OutputDir/${BINARY_NAME}.exe" $CMD_PATH
-if ($LASTEXITCODE -ne 0) { throw "Windows build failed" }
-
-# Build Linux amd64
-Write-Host "Building linux/amd64..."
-$env:GOOS = "linux"
-$env:GOARCH = "amd64"
-& go build -trimpath -ldflags $LDFLAGS -o "$OutputDir/${BINARY_NAME}" $CMD_PATH
-if ($LASTEXITCODE -ne 0) { throw "Linux build failed" }
-
-# Generate checksums
-Write-Host ""
-Write-Host "Generating checksums..."
-Get-ChildItem -Path $OutputDir -File | ForEach-Object {
-    $hash = (Get-FileHash -Path $_.FullName -Algorithm SHA256).Hash.ToLower()
-    "$hash  $($_.Name)" | Out-File -Append -FilePath "$OutputDir/checksums.txt" -Encoding utf8
-    Write-Host "  $hash  $($_.Name)"
-}
-
-Write-Host ""
-Write-Host "Build complete. Binaries in $OutputDir/"

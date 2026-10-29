@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"github.com/certkit-io/certkit-keystore/api"
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
+	"github.com/certkit-io/certkit-keystore/privateca"
+	"github.com/certkit-io/certkit-keystore/selfupdate"
 	"github.com/certkit-io/certkit-keystore/server"
 	"github.com/certkit-io/certkit-keystore/storage"
 )
@@ -37,9 +40,45 @@ func runKeystore(configPath string, stopCh <-chan struct{}) {
 		log.Println("Registration complete")
 	}
 
+	// Private keys are encrypted at rest with a key held by CertKit. Nothing
+	// that reads or writes keys can run until it arrives.
+	encryptionKey, ok := waitForEncryptionKey(stopCh)
+	if !ok {
+		log.Printf("received stop signal, shutting down")
+		return
+	}
+	if err := storage.SetEncryptionKey(encryptionKey); err != nil {
+		log.Fatalf("Invalid encryption key: %v", err)
+	}
+	log.Printf("Encryption key loaded (kid %s)", keystoreCrypto.KeyID(encryptionKey))
+
+	// Keys encrypted with a different key belong to an earlier registration
+	// of this keystore and can never be read: start over with an empty
+	// storage directory.
+	movedAside, err := storage.StartOverIfUnreadable()
+	if err != nil {
+		log.Fatalf("Failed to set aside unreadable storage directory: %v", err)
+	}
+
+	migration := storage.MigrateToEncrypted()
+	if migration.MetadataCleaned > 0 {
+		log.Printf("Removed certificate and key copies from %d metadata.json files", migration.MetadataCleaned)
+	}
+
 	// Ensure CA certificate exists
 	if err := server.EnsureCA(); err != nil {
 		log.Fatalf("Failed to ensure CA: %v", err)
+	}
+
+	// The CA certificate agents trust and the host details can change
+	// between runs (reinstalls over existing storage, upgrades, moves), so
+	// CertKit gets both at every start.
+	caCertPEM, err := server.CACertPEM()
+	if err != nil {
+		log.Printf("Failed to read CA certificate: %v", err)
+	}
+	if err := api.SendHostInfo(caCertPEM); err != nil {
+		log.Printf("Failed to send host info to CertKit: %v", err)
 	}
 
 	// Initialize TLS and server certificate
@@ -49,7 +88,7 @@ func runKeystore(configPath string, stopCh <-chan struct{}) {
 	}
 
 	// Run startup checks
-	runStartupChecks()
+	runStartupChecks(movedAside, migration)
 
 	// Start HTTPS server
 	go func() {
@@ -62,6 +101,7 @@ func runKeystore(configPath string, stopCh <-chan struct{}) {
 	log.Println("Starting polling loop...")
 	if resp, err := api.PollForConfiguration(); err != nil {
 		log.Printf("Initial poll failed: %v", err)
+		server.RecordPollFailure(err)
 	} else {
 		processPollResponse(resp)
 	}
@@ -78,123 +118,236 @@ func runKeystore(configPath string, stopCh <-chan struct{}) {
 			tlsMgr.CheckRotation()
 			if resp, err := api.PollForConfiguration(); err != nil {
 				log.Printf("Poll failed: %v", err)
+				server.RecordPollFailure(err)
 			} else {
 				processPollResponse(resp)
+			}
+			if selfupdate.HandleUpdateIfNeeded() {
+				selfupdate.TriggerRestart()
 			}
 		}
 	}
 }
 
 func processPollResponse(resp *api.PollResponse) {
-	var statuses []api.UpdateStatusItem
+	if resp.UpdateAvailable != nil {
+		selfupdate.SignalUpdateAvailable(
+			config.CurrentVersion.Version,
+			resp.UpdateAvailable.Version,
+			resp.UpdateAvailable.DownloadURL,
+			resp.UpdateAvailable.SHA256,
+		)
+	}
 
-	for _, cert := range resp.Certificates {
-		// If there's a CSR request, generate, save, and submit it
-		if cert.CSR != nil {
-			log.Printf("CSR requested for cert %s (algorithm: %s, SANs: %v)",
-				cert.CustomCertId, cert.CSR.KeyAlgorithm, cert.CSR.SANs)
-
-			if storage.HasPendingCSR(cert.CustomCertId) {
-				msg := fmt.Sprintf("Creating new CSR for %s even though there is an existing one present", cert.CustomCertId)
-				log.Println(msg)
-				if logErr := api.LogKeystoreEvent(msg, api.LogEvents.Info, false); logErr != nil {
-					log.Printf("Failed to send log to CertKit: %v", logErr)
-				}
+	// An empty list (not null) tells CertKit the keystore stores nothing.
+	statuses := []api.UpdateStatusItem{}
+	for _, collection := range resp.Collections {
+		for _, cert := range collection.Certificates {
+			if status := processPollCertificate(collection.Id, cert); status != nil {
+				statuses = append(statuses, *status)
 			}
-
-			csrPEM, keyPEM, err := keystoreCrypto.GenerateCSR(cert.CSR.SANs, cert.CSR.KeyAlgorithm)
-			if err != nil {
-				log.Printf("Failed to generate CSR for %s: %v", cert.CustomCertId, err)
-				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()})
-				continue
-			}
-
-			if err := storage.SaveCSR(cert.CustomCertId, csrPEM, keyPEM); err != nil {
-				log.Printf("Failed to save CSR for %s to disk: %v", cert.CustomCertId, err)
-				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()})
-				continue
-			}
-
-			if err := api.SetCSR(cert.CustomCertId, csrPEM); err != nil {
-				log.Printf("Failed to submit CSR for %s: %v", cert.CustomCertId, err)
-				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()})
-				continue
-			}
-
-			log.Printf("CSR submitted for cert %s", cert.CustomCertId)
-			statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.PendingCSR})
-			continue
-		}
-
-		// If there's an issued cert, ensure files and metadata are on disk
-		if cert.LatestIssuedCert != nil {
-			// If the cert has no key but we have a pending CSR, check if it matches
-			keyOnDisk, _ := storage.IsKeyOnDisk(cert.CustomCertId, cert.LatestIssuedCert.SHA1)
-			if cert.LatestIssuedCert.Key == "" && !keyOnDisk && storage.HasPendingCSR(cert.CustomCertId) {
-				matched, err := storage.MatchAndAdoptCSRKey(cert.CustomCertId, cert.LatestIssuedCert)
-				if err != nil {
-					log.Printf("Error while matching CSR key for %s: %v", cert.CustomCertId, err)
-				} else if matched {
-					log.Printf("Matched CSR key to issued cert %s, adopted key", cert.CustomCertId)
-				} else {
-					log.Printf("Failed to match CSR key for %s: %v", cert.CustomCertId, cert.LatestIssuedCert)
-				}
-			} else if storage.HasPendingCSR(cert.CustomCertId) {
-				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.PendingCSR})
-				continue
-			}
-
-			wrote, err := storage.EnsureCertOnDisk(cert.CustomCertId, cert.LatestIssuedCert)
-			if err != nil {
-				log.Printf("Failed to write cert %s to disk: %v", cert.CustomCertId, err)
-				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.CertNotStored, Message: err.Error()})
-				continue
-			} else if wrote {
-				log.Printf("Wrote cert %s (sha1: %s) to disk", cert.CustomCertId, cert.LatestIssuedCert.SHA1)
-			}
-
-			updated, err := storage.EnsureMetadata(cert.CustomCertId, cert.LatestIssuedCert)
-			if err != nil {
-				log.Printf("Failed to write metadata for %s: %v", cert.CustomCertId, err)
-			} else if updated {
-				log.Printf("Updated metadata for cert %s", cert.CustomCertId)
-			}
-
-			// Determine final status for this cert
-			if keyFound, keyErr := storage.IsKeyOnDisk(cert.CustomCertId, cert.LatestIssuedCert.SHA1); !keyFound {
-				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.KeyNotFound, Message: keyErr.Error()})
-			} else {
-				statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.Synced})
-			}
-			continue
-		}
-
-		// No issued cert — check if there's a pending CSR on disk
-		if storage.HasPendingCSR(cert.CustomCertId) {
-			statuses = append(statuses, api.UpdateStatusItem{CustomCertId: cert.CustomCertId, Status: api.CertStatuses.PendingCSR})
 		}
 	}
 
 	if err := api.UpdateStatus(statuses); err != nil {
 		log.Printf("Failed to send status update to CertKit: %v", err)
 	}
+	server.RecordPoll(resp, statuses)
+
+	// Private CA requests come after the certificates: generating an RSA key
+	// can take a while.
+	for _, req := range resp.SigningRequests {
+		processSigningRequest(req)
+	}
 }
 
-func runStartupChecks() {
+// processSigningRequest carries out one private CA request and sends CertKit
+// the result. A failure is sent back as the result; it never stops the poll.
+func processSigningRequest(req api.SigningRequest) {
+	log.Printf("Signing request %d: %s", req.Id, req.Type)
+	result := privateca.Sign(req)
+	if result.Error != "" {
+		log.Printf("Signing request %d (%s) failed: %s", req.Id, req.Type, result.Error)
+	}
+
+	err := api.SendSigningResult(result)
+	switch {
+	case errors.Is(err, api.ErrSigningRequestGone):
+		log.Printf("CertKit no longer needs the result of signing request %d", req.Id)
+	case err != nil:
+		log.Printf("Failed to send the result of signing request %d to CertKit: %v", req.Id, err)
+	case result.Error == "":
+		log.Printf("Signing request %d (%s) done", req.Id, req.Type)
+	}
+}
+
+// processPollCertificate stores what CertKit sent for one certificate and
+// returns the status to report for it, or nil if there is nothing to report.
+func processPollCertificate(collectionId string, cert api.PollCertificate) *api.UpdateStatusItem {
+	if !storage.IsSafeId(collectionId) || !storage.IsSafeId(cert.CustomCertId) {
+		log.Printf("Skipping certificate %q in collection %q: not a valid ID", cert.CustomCertId, collectionId)
+		return nil
+	}
+
+	// Keystores before v2 stored certificates outside collection directories.
+	// Until the move works, the old directory is left as it is and still
+	// serves agents.
+	if _, err := storage.AdoptLegacyCert(collectionId, cert.CustomCertId); err != nil {
+		log.Printf("Failed to move certificate %s into collection %s: %v", cert.CustomCertId, collectionId, err)
+		return &api.UpdateStatusItem{CollectionId: collectionId, CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()}
+	}
+
+	// If there's a CSR request, generate, save, and submit it
+	if cert.CSR != nil {
+		log.Printf("CSR requested for cert %s (algorithm: %s, SANs: %v)",
+			cert.CustomCertId, cert.CSR.KeyAlgorithm, cert.CSR.SANs)
+
+		if storage.HasPendingCSR(collectionId, cert.CustomCertId) {
+			msg := fmt.Sprintf("Creating new CSR for %s even though there is an existing one present", cert.CustomCertId)
+			log.Println(msg)
+			if logErr := api.LogKeystoreEvent(msg, api.LogEvents.Info, false); logErr != nil {
+				log.Printf("Failed to send log to CertKit: %v", logErr)
+			}
+		}
+
+		csrPEM, keyPEM, err := keystoreCrypto.GenerateCSR(cert.CSR.SANs, cert.CSR.KeyAlgorithm)
+		if err != nil {
+			log.Printf("Failed to generate CSR for %s: %v", cert.CustomCertId, err)
+			return &api.UpdateStatusItem{CollectionId: collectionId, CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()}
+		}
+
+		if err := storage.SaveCSR(collectionId, cert.CustomCertId, csrPEM, keyPEM); err != nil {
+			log.Printf("Failed to save CSR for %s to disk: %v", cert.CustomCertId, err)
+			return &api.UpdateStatusItem{CollectionId: collectionId, CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()}
+		}
+
+		if err := api.SetCSR(collectionId, cert.CustomCertId, csrPEM); err != nil {
+			log.Printf("Failed to submit CSR for %s: %v", cert.CustomCertId, err)
+			return &api.UpdateStatusItem{CollectionId: collectionId, CustomCertId: cert.CustomCertId, Status: api.CertStatuses.GeneralError, Message: err.Error()}
+		}
+
+		log.Printf("CSR submitted for cert %s", cert.CustomCertId)
+		return &api.UpdateStatusItem{CollectionId: collectionId, CustomCertId: cert.CustomCertId, Status: api.CertStatuses.PendingCSR}
+	}
+
+	// If there's an issued cert, ensure files and metadata are on disk
+	if cert.LatestIssuedCert != nil {
+		// If the cert has no key but we have a pending CSR, check if it matches
+		keyOnDisk, _ := storage.IsKeyOnDisk(collectionId, cert.CustomCertId, cert.LatestIssuedCert.SHA1)
+		if cert.LatestIssuedCert.Key == "" && !keyOnDisk && storage.HasPendingCSR(collectionId, cert.CustomCertId) {
+			matched, err := storage.MatchAndAdoptCSRKey(collectionId, cert.CustomCertId, cert.LatestIssuedCert)
+			if err != nil {
+				log.Printf("Error while matching CSR key for %s: %v", cert.CustomCertId, err)
+			} else if matched {
+				log.Printf("Matched CSR key to issued cert %s, adopted key", cert.CustomCertId)
+			} else {
+				log.Printf("Failed to match CSR key for %s: %v", cert.CustomCertId, cert.LatestIssuedCert)
+			}
+		} else if storage.HasPendingCSR(collectionId, cert.CustomCertId) {
+			return &api.UpdateStatusItem{CollectionId: collectionId, CustomCertId: cert.CustomCertId, Status: api.CertStatuses.PendingCSR}
+		}
+
+		wrote, err := storage.EnsureCertOnDisk(collectionId, cert.CustomCertId, cert.LatestIssuedCert)
+		if err != nil {
+			log.Printf("Failed to write cert %s to disk: %v", cert.CustomCertId, err)
+			return &api.UpdateStatusItem{CollectionId: collectionId, CustomCertId: cert.CustomCertId, Status: api.CertStatuses.CertNotStored, Message: err.Error()}
+		} else if wrote {
+			log.Printf("Wrote cert %s (sha1: %s) to disk", cert.CustomCertId, cert.LatestIssuedCert.SHA1)
+		}
+
+		updated, err := storage.EnsureMetadata(collectionId, cert.CustomCertId, cert.LatestIssuedCert)
+		if err != nil {
+			log.Printf("Failed to write metadata for %s: %v", cert.CustomCertId, err)
+		} else if updated {
+			log.Printf("Updated metadata for cert %s", cert.CustomCertId)
+		}
+
+		// Determine final status for this cert
+		if keyFound, keyErr := storage.IsKeyOnDisk(collectionId, cert.CustomCertId, cert.LatestIssuedCert.SHA1); !keyFound {
+			return &api.UpdateStatusItem{CollectionId: collectionId, CustomCertId: cert.CustomCertId, Status: api.CertStatuses.KeyNotFound, Message: keyErr.Error()}
+		}
+		return &api.UpdateStatusItem{CollectionId: collectionId, CustomCertId: cert.CustomCertId, Status: api.CertStatuses.Synced}
+	}
+
+	// No issued cert — check if there's a pending CSR on disk
+	if storage.HasPendingCSR(collectionId, cert.CustomCertId) {
+		return &api.UpdateStatusItem{CollectionId: collectionId, CustomCertId: cert.CustomCertId, Status: api.CertStatuses.PendingCSR}
+	}
+	return nil
+}
+
+func runStartupChecks(movedAside string, migration storage.MigrationResult) {
 	log.Println("Running startup checks...")
+	passed := true
+
+	if movedAside != "" {
+		reportStartupFailure(fmt.Sprintf("Stored private keys were encrypted by an earlier registration of this keystore and cannot be read. "+
+			"Moved the storage directory to %s and started over. Keys CertKit holds will be downloaded again; "+
+			"certificates that used keystore-generated CSRs must be reissued.", movedAside))
+		passed = false
+	}
+
+	if migration.Encrypted > 0 {
+		msg := fmt.Sprintf("Encrypted %d existing private key(s) at rest.", migration.Encrypted)
+		log.Println(msg)
+		if logErr := api.LogKeystoreEvent(msg, api.LogEvents.Startup, false); logErr != nil {
+			log.Printf("Failed to send startup log to CertKit: %v", logErr)
+		}
+	}
+	if n := len(migration.Failed); n > 0 {
+		for _, err := range migration.Failed {
+			log.Printf("Encryption at rest migration error: %v", err)
+		}
+		reportStartupFailure(fmt.Sprintf("Failed to encrypt %d private key file(s) at rest: %v", n, migration.Failed[0]))
+		passed = false
+	}
 
 	if err := checkStorageDirWritable(); err != nil {
-		msg := fmt.Sprintf("Storage directory is not writable: %v", err)
-		log.Printf("Startup check FAILED: %s", msg)
-		if logErr := api.LogKeystoreEvent(msg, api.LogEvents.Startup, true); logErr != nil {
-			log.Printf("Failed to send startup error to CertKit: %v", logErr)
-		}
+		reportStartupFailure(fmt.Sprintf("Storage directory is not writable: %v", err))
 		return
 	}
 
-	log.Println("All startup checks passed")
+	if passed {
+		log.Println("All startup checks passed")
+	}
 	if logErr := api.LogKeystoreEvent("Keystore running.", api.LogEvents.Startup, false); logErr != nil {
 		log.Printf("Failed to send startup log to CertKit: %v", logErr)
+	}
+}
+
+func reportStartupFailure(msg string) {
+	log.Printf("Startup check FAILED: %s", msg)
+	if logErr := api.LogKeystoreEvent(msg, api.LogEvents.Startup, true); logErr != nil {
+		log.Printf("Failed to send startup error to CertKit: %v", logErr)
+	}
+}
+
+// encryptionKeyRetryDelays is the wait between attempts to fetch the
+// encryption key; the last delay repeats.
+var encryptionKeyRetryDelays = []time.Duration{
+	5 * time.Second, 10 * time.Second, 20 * time.Second, 40 * time.Second, 60 * time.Second,
+}
+
+// fetchEncryptionKey is replaced in tests.
+var fetchEncryptionKey = api.FetchEncryptionKey
+
+// waitForEncryptionKey fetches the keystore's encryption key from CertKit,
+// retrying until it succeeds. It returns false if stopCh closes first.
+func waitForEncryptionKey(stopCh <-chan struct{}) ([]byte, bool) {
+	for attempt := 0; ; attempt++ {
+		key, err := fetchEncryptionKey()
+		if err == nil {
+			return key, true
+		}
+
+		delay := encryptionKeyRetryDelays[min(attempt, len(encryptionKeyRetryDelays)-1)]
+		log.Printf("Waiting for encryption key from CertKit: %v (retrying in %s)", err, delay)
+
+		select {
+		case <-stopCh:
+			return nil, false
+		case <-time.After(delay):
+		}
 	}
 }
 

@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CertKit Keystore MSI (WiX v5+ authoring), modeled on the CertKit Agent MSI.
+
+  Build (from the repo root):
+    wix build packaging\windows\Package.wxs packaging\windows\CertKitUI.wxs -arch x64
+      -d Version=<a.b.c>  (tag minus the leading "v"; must be numeric a.b.c)
+      -d KeystoreExe=dist\bin\certkit-keystore-windows-amd64.exe
+      -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext
+      -o dist\msi\certkit-keystore-windows-amd64.msi
+
+  The UpgradeCode is frozen forever - never change it, it is how future MSIs
+  find and upgrade existing installs.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="CertKit Keystore"
+           Manufacturer="CertKit"
+           Version="$(var.Version)"
+           UpgradeCode="C76D34BA-616F-49A7-8256-BB4930439953"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <SummaryInformation Description="CertKit Keystore Installer" Manufacturer="CertKit"/>
+
+    <!-- afterInstallValidate: the old product is fully removed first. Its
+         uninstall runs with UPGRADINGPRODUCTCODE set, so MsiCleanup is
+         skipped and the keystore's config/identity survive upgrades.
+
+         AllowSameVersionUpgrades: prerelease tags (v1.2.0-alpha) strip
+         their suffix for ProductVersion, so a prerelease and its final are
+         both 1.2.0 - this makes the final upgrade the prerelease in place
+         instead of installing side by side. -->
+    <MajorUpgrade Schedule="afterInstallValidate"
+                  AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of CertKit Keystore is already installed."/>
+
+    <MediaTemplate EmbedCab="yes"/>
+
+    <Icon Id="CertKitIcon" SourceFile="assets\certkit.ico"/>
+    <Property Id="ARPPRODUCTICON" Value="CertKitIcon"/>
+    <Property Id="ARPHELPLINK" Value="https://certkit.io"/>
+    <!-- ARPNOMODIFY=1 is set inside CertKitUI (as in stock WixUI_InstallDir). -->
+    <!-- Repair would clobber a self-updated (newer) keystore exe, so disable it. -->
+    <Property Id="ARPNOREPAIR" Value="1"/>
+
+    <!-- Public properties for silent installs (first install only; an
+         existing config is kept and these are ignored):
+           msiexec /i certkit-keystore-windows-amd64.msi /qn
+             REGISTRATIONKEY="app.xxxx" HOST="keystore.example.com"
+             [PORT=443] [STORAGEDIR="D:\CertKit\certificates"]
+         Hidden keeps the key out of verbose logs; Secure lets the values
+         cross into the elevated execute sequence. -->
+    <Property Id="REGISTRATIONKEY" Hidden="yes" Secure="yes"/>
+    <Property Id="HOST" Secure="yes"/>
+    <Property Id="PORT" Value="443" Secure="yes"/>
+    <Property Id="STORAGEDIR" Secure="yes"/>
+    <SetProperty Id="STORAGEDIR" Value="[CommonAppDataFolder]CertKit\certkit-keystore\certificates"
+                 Before="AppSearch" Sequence="first" Condition="NOT STORAGEDIR"/>
+
+    <!-- The configuration page starts with this machine's DNS name in HOST:
+         its host name, plus its primary DNS suffix when it has one (domain
+         members). Interactive installs only; silent installs still pass
+         HOST. -->
+    <Property Id="DNSHOSTNAME">
+      <RegistrySearch Id="DnsHostnameSearch" Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\Tcpip\Parameters"
+                      Name="Hostname" Type="raw"/>
+    </Property>
+    <Property Id="DNSDOMAIN">
+      <RegistrySearch Id="DnsDomainSearch" Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\Tcpip\Parameters"
+                      Name="Domain" Type="raw"/>
+    </Property>
+    <SetProperty Id="HOST" Action="SetHostWithDomain" Value="[DNSHOSTNAME].[DNSDOMAIN]"
+                 After="AppSearch" Sequence="ui" Condition="NOT HOST AND DNSHOSTNAME AND DNSDOMAIN"/>
+    <SetProperty Id="HOST" Action="SetHostWithoutDomain" Value="[DNSHOSTNAME]"
+                 After="AppSearch" Sequence="ui" Condition="NOT HOST AND DNSHOSTNAME AND NOT DNSDOMAIN"/>
+    <!-- The deferred CA reads its command line from a property with the CA's
+         name; hide that one too or the key would leak into /l*v logs. -->
+    <Property Id="BootstrapConfig" Hidden="yes"/>
+
+    <!-- Set by AppSearch before the UI runs: present when this machine
+         already has a keystore config, in which case the wizard skips the
+         configuration page (upgrades/migrations keep the existing config). -->
+    <Property Id="CONFIGEXISTS">
+      <DirectorySearch Id="CertKitConfigDirSearch" Path="[CommonAppDataFolder]CertKit\certkit-keystore" Depth="0">
+        <FileSearch Id="CertKitConfigFileSearch" Name="config.json"/>
+      </DirectorySearch>
+    </Property>
+
+    <!-- Installer UI (interactive installs only; /qn skips it). CertKitUI is
+         the stock WixUI_InstallDir flow plus a keystore configuration page -
+         see CertKitUI.wxs. -->
+    <UIRef Id="CertKitUI"/>
+    <Property Id="WIXUI_INSTALLDIR" Value="CERTKITDIR"/>
+    <WixVariable Id="WixUILicenseRtf" Value="packaging\windows\license.rtf"/>
+    <WixVariable Id="WixUIBannerBmp" Value="packaging\windows\banner.bmp"/>
+    <WixVariable Id="WixUIDialogBmp" Value="packaging\windows\dialog.bmp"/>
+
+    <!-- Layout matches the script install exactly: C:\Program Files\CertKit\bin
+         (shared with the CertKit Agent, which installs alongside). -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="CERTKITDIR" Name="CertKit">
+        <Directory Id="BINDIR" Name="bin"/>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="CertKit Keystore" AllowAbsent="no">
+      <ComponentRef Id="KeystoreExe"/>
+      <ComponentRef Id="EventLogSource"/>
+    </Feature>
+
+    <Component Id="KeystoreExe" Directory="BINDIR">
+      <File Id="KeystoreExeFile" Source="$(var.KeystoreExe)" Name="certkit-keystore.exe" KeyPath="yes"/>
+
+      <!-- Internal service name stays certkit-keystore (everything
+           programmatic keys on it); only the services.msc display name is
+           branded. -->
+      <ServiceInstall Id="KeystoreService"
+                      Name="certkit-keystore"
+                      DisplayName="CertKit Keystore"
+                      Description="CertKit Keystore service"
+                      Type="ownProcess"
+                      Start="auto"
+                      Account="LocalSystem"
+                      ErrorControl="normal"
+                      Arguments="run --service">
+        <!-- Automatic (Delayed Start). This triggers warning WIX1149, which is
+             expected: Microsoft's "not working as expected" note covers only
+             MSI's failure-actions table (hence util:ServiceConfig below for
+             recovery), and util:ServiceConfig has no delayed-start option. -->
+        <ServiceConfig DelayedAutoStart="yes" OnInstall="yes" OnReinstall="yes"/>
+        <!-- Replicates configureRecovery() in install/windows.go: 3x restart,
+             5s delay, 1-day reset. Self-update relies on this: it exits
+             non-zero so the SCM restarts the service on the new exe. -->
+        <util:ServiceConfig FirstFailureActionType="restart"
+                            SecondFailureActionType="restart"
+                            ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="5"
+                            ResetPeriodInDays="1"/>
+      </ServiceInstall>
+
+      <!-- Stop/remove must block (upgrades replace the exe); start must not:
+           the keystore exits when it cannot register, and a failed first
+           start should not roll back the install. install.ps1 verifies the
+           service is Running after install. -->
+      <ServiceControl Id="KeystoreServiceStopRemove" Name="certkit-keystore"
+                      Stop="both" Remove="uninstall" Wait="yes"/>
+      <ServiceControl Id="KeystoreServiceStart" Name="certkit-keystore"
+                      Start="install" Wait="no"/>
+
+      <!-- Self-update litter -->
+      <RemoveFile Id="RmOldExe" Name="certkit-keystore.old.exe" On="both"/>
+      <RemoveFile Id="RmNewExe" Name="certkit-keystore.new.exe" On="both"/>
+    </Component>
+
+    <!-- Takes over the registration the Go code writes today (same key, same
+         values): HKLM\SYSTEM\CCS\Services\EventLog\Application\CertKit.
+         The CertKit Agent MSI registers the same source with identical
+         authoring, so both resolve to the same component GUID (derived from
+         the registry key path) and Windows Installer reference-counts it:
+         uninstalling one product leaves the source for the other. Keep this
+         component identical to the agent's. -->
+    <Component Id="EventLogSource" Directory="BINDIR">
+      <util:EventSource Log="Application"
+                        Name="CertKit"
+                        EventMessageFile="[System64Folder]EventCreate.exe"
+                        SupportsErrors="yes"
+                        SupportsWarnings="yes"
+                        SupportsInformationals="yes"
+                        KeyPath="yes"/>
+    </Component>
+
+    <!-- Custom actions: both run our own installed (signed) exe. Deferred +
+         no-impersonate (LocalSystem), command line delivered via the
+         SetProperty/CustomActionData pattern because deferred actions can
+         read neither installer properties nor the invoking user's
+         environment. No PowerShell anywhere (the firewall rule goes through
+         netsh): AV heuristics flag installer-spawned PowerShell.
+
+         STORAGEDIR is passed as "[STORAGEDIR]\." so a value with a trailing
+         backslash (D:\certs\) cannot escape the closing quote; the exe
+         normalizes the path. -->
+    <SetProperty Id="BootstrapConfig" Sequence="execute" Before="BootstrapConfig"
+                 Value="&quot;[BINDIR]certkit-keystore.exe&quot; bootstrap-config --key &quot;[REGISTRATIONKEY]&quot; --host &quot;[HOST]&quot; --port &quot;[PORT]&quot; --storage-dir &quot;[STORAGEDIR]\.&quot;"/>
+    <CustomAction Id="BootstrapConfig"
+                  DllEntry="WixQuietExec64"
+                  BinaryRef="Wix4UtilCA_X64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check"/>
+
+    <SetProperty Id="MsiCleanup" Sequence="execute" Before="MsiCleanup"
+                 Value="&quot;[BINDIR]certkit-keystore.exe&quot; msi-cleanup"/>
+    <CustomAction Id="MsiCleanup"
+                  DllEntry="WixQuietExec64"
+                  BinaryRef="Wix4UtilCA_X64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"/>
+
+    <InstallExecuteSequence>
+      <!-- After files+service exist, before StartServices: the service's
+           first start must find config.json. -->
+      <Custom Action="BootstrapConfig" After="InstallServices"
+              Condition="NOT Installed OR REINSTALL"/>
+      <!-- True uninstall only (never on upgrade); the exe must still be on
+           disk, so after StopServices and before RemoveFiles. -->
+      <Custom Action="MsiCleanup" After="StopServices"
+              Condition="(REMOVE~=&quot;ALL&quot;) AND (NOT UPGRADINGPRODUCTCODE)"/>
+    </InstallExecuteSequence>
+
+  </Package>
+</Wix>

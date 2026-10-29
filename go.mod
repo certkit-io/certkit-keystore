@@ -1,6 +1,6 @@
 module github.com/certkit-io/certkit-keystore
 
-go 1.25.0
+go 1.26.10
 
 require (
 	golang.org/x/sys v0.42.0

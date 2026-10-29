@@ -14,11 +14,12 @@ import (
 )
 
 type SetCsrRequest struct {
+	CollectionId string `json:"collectionId"`
 	CustomCertId string `json:"customCertId"`
 	CSR          string `json:"csr"`
 }
 
-func SetCSR(customCertId string, csrPEM string) error {
+func SetCSR(collectionId string, customCertId string, csrPEM string) error {
 	cfg := &config.CurrentConfig
 	v := config.CurrentVersion
 
@@ -28,6 +29,7 @@ func SetCSR(customCertId string, csrPEM string) error {
 	}
 
 	body, err := json.Marshal(SetCsrRequest{
+		CollectionId: collectionId,
 		CustomCertId: customCertId,
 		CSR:          csrPEM,
 	})
@@ -36,7 +38,7 @@ func SetCSR(customCertId string, csrPEM string) error {
 	}
 
 	url := strings.TrimRight(cfg.CertkitBaseUrl, "/") +
-		"/api/keystore/v1/" + cfg.Keystore.Id + "/set-csr"
+		"/api/keystore/v2/" + cfg.Keystore.Id + "/set-csr"
 
 	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {

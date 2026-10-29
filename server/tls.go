@@ -11,11 +11,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/certkit-io/certkit-keystore/config"
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
+	"github.com/certkit-io/certkit-keystore/storage"
 )
 
 const rotationWindow = 30 * 24 * time.Hour
@@ -140,7 +142,16 @@ func (m *TLSManager) loadServerCert() error {
 	certPath := filepath.Join(caDir(), serverCertFile)
 	keyPath := filepath.Join(caDir(), serverKeyFile)
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("read server cert: %w", err)
+	}
+	keyPEM, err := storage.ReadPrivateKey(keyPath)
+	if err != nil {
+		return fmt.Errorf("read server key: %w", err)
+	}
+
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return fmt.Errorf("load server cert: %w", err)
 	}
@@ -160,7 +171,7 @@ func (m *TLSManager) issueServerCert() error {
 		return fmt.Errorf("read CA cert: %w", err)
 	}
 
-	caKeyPEM, err := os.ReadFile(filepath.Join(caDir(), caKeyFile))
+	caKeyPEM, err := storage.ReadPrivateKey(filepath.Join(caDir(), caKeyFile))
 	if err != nil {
 		return fmt.Errorf("read CA key: %w", err)
 	}
@@ -183,7 +194,7 @@ func (m *TLSManager) issueServerCert() error {
 	if err := os.WriteFile(filepath.Join(dir, serverCertFile), []byte(certPEM), 0o600); err != nil {
 		return fmt.Errorf("write server cert: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, serverKeyFile), []byte(keyPEM), 0o600); err != nil {
+	if err := storage.WritePrivateKey(filepath.Join(dir, serverKeyFile), []byte(keyPEM)); err != nil {
 		return fmt.Errorf("write server key: %w", err)
 	}
 
@@ -219,17 +230,52 @@ func (m *TLSManager) StartServer() error {
 		GetCertificate: m.GetCertificate,
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", handleRoot)
-	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-certificate", handleFetchCertificate)
-	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-pfx", handleFetchPfx)
-
 	srv := &http.Server{
 		Addr:      ":" + cfg.Keystore.Port,
-		Handler:   mux,
+		Handler:   newMux(),
 		TLSConfig: tlsConfig,
+		ErrorLog:  log.New(serverErrorWriter{}, "", 0),
 	}
 
 	log.Printf("Starting HTTPS server on :%s", cfg.Keystore.Port)
 	return srv.ListenAndServeTLS("", "")
+}
+
+// serverErrorWriter passes the HTTPS server's errors on to the keystore's log,
+// except for handshakes that a client ended because it doesn't trust the
+// keystore's certificate.
+type serverErrorWriter struct{}
+
+func (serverErrorWriter) Write(p []byte) (int, error) {
+	if line := string(p); !untrustedCertError(line) {
+		log.Print(line)
+	}
+	return len(p), nil
+}
+
+// untrustedCertError reports whether line is the error net/http logs when a
+// browser (or curl) ends the handshake because it doesn't trust the keystore's
+// certificate, which browsers do on every visit: only agents are given the
+// keystore's CA. Go clients, agents among them, send "bad certificate"
+// instead, and that's still logged.
+func untrustedCertError(line string) bool {
+	line = strings.TrimSuffix(line, "\n")
+	return strings.HasPrefix(line, "http: TLS handshake error from ") &&
+		(strings.HasSuffix(line, ": remote error: tls: unknown certificate") ||
+			strings.HasSuffix(line, ": remote error: tls: unknown certificate authority"))
+}
+
+// newMux routes the keystore's requests. Its pages are for browsers logged in
+// through CertKit; CertKit validates each agent request.
+func newMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", requireLogin(handleRoot))
+	mux.HandleFunc("GET /logs", requireLogin(handleLogs))
+	mux.HandleFunc("GET /logs/download", requireLogin(handleLogsDownload))
+	mux.HandleFunc("GET /auth/login", handleLogin)
+	mux.HandleFunc("GET /auth/callback", handleLoginCallback)
+	mux.HandleFunc("POST /auth/logout", handleLogout)
+	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-certificate", handleFetchCertificate)
+	mux.HandleFunc("POST /api/agent/v1/{agentSqid}/fetch-pfx", handleFetchPfx)
+	return mux
 }

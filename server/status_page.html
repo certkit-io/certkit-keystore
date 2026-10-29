@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="refresh" content="60">
+<title>CertKit Keystore</title>
+<link rel="icon" type="image/png" href="{{.CertkitURL}}/favicon-128x128.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Mono:wght@400;500;700&display=swap">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --card: #ffffff;
+  --text: #373c44;
+  --heading: #181c25;
+  --muted: #646b79;
+  --line: #e7eaf0;
+  --surface: #f3f5f7;
+  --shadow: rgba(129, 145, 181, 0.18);
+  --primary: #047878;
+  --primary-hover: #025d5d;
+  --primary-underline: rgba(4, 120, 120, 0.5);
+  --dot-good: #00895a;
+  --dot-ok: #ffbf00;
+  --dot-bad: #af291d;
+  --dot-none: #ababab;
+  --good: #00895a;
+  --good-bg: rgba(203, 252, 225, 0.5);
+  --ok: #946c00;
+  --ok-bg: rgba(252, 239, 217, 0.6);
+  --bad: #af291d;
+  --bad-bg: rgba(250, 238, 235, 0.7);
+  --alert-red: #f38f79;
+  --alert-red-bg: #faeeeb;
+  --alert-blue: #51b4ff;
+  --alert-blue-bg: #e9f2fc;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #13171f;
+    --card: #202632;
+    --text: #c2c7d0;
+    --heading: #dfe3eb;
+    --muted: #8a93a3;
+    --line: #333c4e;
+    --surface: #2a3140;
+    --shadow: rgba(129, 145, 181, 0.3);
+    --primary: #0ab1b1;
+    --primary-hover: #0ccece;
+    --primary-underline: rgba(10, 177, 177, 0.5);
+    --good: #55c21e;
+    --good-bg: #173806;
+    --ok: #ff9500;
+    --ok-bg: #271805;
+    --bad: #f06048;
+    --bad-bg: #30130a;
+    --alert-red: #f06048;
+    --alert-red-bg: #30130a;
+    --alert-blue-bg: #10243a;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 "Noto Sans Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+a { color: var(--primary); text-decoration-color: var(--primary-underline); text-underline-offset: 3px; }
+a:hover { color: var(--primary-hover); text-decoration-color: currentColor; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 0 24px; }
+
+.topbar { border-bottom: 1px solid var(--line); }
+.topbar .wrap { display: flex; align-items: center; gap: 14px; min-height: 64px; }
+.logo { display: block; height: 30px; width: auto; }
+.crumb { color: var(--muted); }
+.topbar .manage { margin-left: auto; white-space: nowrap; }
+.logout { margin: 0; }
+.logout button { padding: 3px 12px; border: 1px solid var(--line); border-radius: 3px; background: none; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
+.logout button:hover { border-color: var(--primary); color: var(--primary); }
+
+.hero { display: flex; align-items: center; gap: 18px; margin: 28px 0 22px; }
+h1 { margin: 0; color: var(--heading); font-size: 28px; line-height: 1.2; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-top: 8px; color: var(--muted); font-size: 14px; }
+.hero .button { margin-left: auto; }
+.button { padding: 7px 16px; border: 1px solid var(--primary); box-shadow: 3px 3px 0 var(--shadow); color: var(--primary); font-size: 14px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.button:hover { border-color: var(--primary-hover); }
+.button:active { box-shadow: 1px 1px 0 var(--shadow); transform: translate(2px, 2px); }
+
+.dot { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--dot-none); }
+.dot.good { background: var(--dot-good); }
+.dot.ok { background: var(--dot-ok); }
+.dot.bad { background: var(--dot-bad); }
+.dot.hollow { background: transparent; border: 2px solid var(--dot-good); }
+.dot.large { width: 30px; height: 30px; }
+.dot.large.hollow { border-width: 5px; }
+
+.pill { display: inline-block; padding: 1px 10px; border-radius: 3px; background: var(--surface); color: var(--muted); font-weight: 500; white-space: nowrap; }
+.pill.good { background: var(--good-bg); color: var(--good); }
+.pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); }
+.v-good { color: var(--good); }
+.v-ok { color: var(--ok); }
+.v-bad { color: var(--bad); }
+
+.alert { margin: 0 0 20px; padding: 12px 16px; border-left: 4px solid var(--alert-red); background: var(--alert-red-bg); }
+.alert.blue { border-left-color: var(--alert-blue); background: var(--alert-blue-bg); }
+.alert code { word-break: break-word; }
+
+.box {
+  margin-bottom: 28px;
+  padding: 20px 24px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  box-shadow: 4px 4px 0 var(--shadow);
+}
+.box h2 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; color: var(--heading); font-size: 17px; }
+.box h2 .count { color: var(--muted); font-size: 14px; font-weight: 400; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+thead th { color: var(--heading); font-size: 14px; font-weight: 700; }
+tbody tr:last-child > * { border-bottom: 0; }
+.scroll { overflow-x: auto; }
+.certs .dotcell { width: 26px; padding-right: 0; padding-top: 14px; }
+.certs .name { color: var(--heading); font-weight: 700; text-decoration: none; overflow-wrap: anywhere; }
+.certs a.name:hover { color: var(--primary); text-decoration: underline; }
+.certs .exp, .certs .key { white-space: nowrap; }
+.sub { margin-top: 2px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.empty { margin: 0; color: var(--muted); }
+
+.notes { margin: 0 0 14px; padding: 0 0 14px 18px; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.5; }
+.notes li { max-width: 120ch; }
+.notes li + li { margin-top: 4px; }
+.notes strong { color: var(--heading); }
+.fields { margin: 0; columns: 440px 2; column-gap: 48px; font-size: 13px; line-height: 1.45; }
+.field { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; padding: 3px 0; break-inside: avoid; }
+.field dt { color: var(--muted); }
+.field dd { margin: 0; overflow-wrap: anywhere; }
+.note { color: var(--muted); }
+.none { color: var(--muted); }
+
+footer { padding-top: 4px; padding-bottom: 40px; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 600px) {
+  body { font-size: 14px; }
+  .wrap { padding: 0 16px; }
+  .topbar .wrap { flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
+  .box { padding: 16px; }
+  .hero { display: grid; grid-template-columns: auto minmax(0, 1fr); row-gap: 14px; }
+  .hero .button { grid-column: 2; justify-self: start; margin-left: 0; }
+  h1 { font-size: 22px; }
+  .hide-sm { display: none; }
+  .field { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 4px 0; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <a href="{{.CertkitURL}}">
+      <picture>
+        <source srcset="{{.CertkitURL}}/images/brand/certkit-logo-dark.svg" media="(prefers-color-scheme: dark)">
+        <img class="logo" src="{{.CertkitURL}}/images/brand/certkit-logo.svg" alt="CertKit">
+      </picture>
+    </a>
+    <span class="crumb">/ keystore</span>
+    <a class="manage" href="{{.ManagementURL}}">Manage in CertKit &rarr;</a>
+    <form class="logout" method="post" action="/auth/logout"><button type="submit">Logout</button></form>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <span class="dot large {{.Health.Class}}" title="{{.Health.Message}}"></span>
+    <div>
+      <h1>Local Keystore</h1>
+      <div class="meta">
+        <span class="pill {{.Health.Class}}">{{.Health.Message}}</span>
+        <span>{{.Version.Version}}</span>
+        <span>port {{.Port}}</span>
+        <span>up {{.Uptime}}</span>
+        {{if .LastCheck}}<span>checked in {{.LastCheck}}</span>{{end}}
+      </div>
+    </div>
+    <a class="button" href="/logs">Show logs</a>
+  </section>
+
+  {{if .PollError}}
+  <div class="alert">
+    {{if .Unauthorized}}
+    <strong>This keystore isn't authorized yet.</strong>
+    Authorize it in the <a href="{{.ManagementURL}}">keystore settings in CertKit</a>.
+    {{else}}
+    <strong>The last check-in with CertKit failed.</strong>
+    The keystore keeps serving the certificates it has and retries every 30 seconds.
+    <div class="sub"><code>{{.PollError}}</code></div>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .UpdateVersion}}
+  <div class="alert blue">
+    CertKit Keystore <strong>{{.UpdateVersion}}</strong> is available. This keystore is running {{.Version.Version}}.
+    <a href="https://github.com/certkit-io/certkit-keystore/releases">Release notes</a>
+  </div>
+  {{end}}
+
+  {{template "section" .Keystore}}
+
+  {{range .Groups}}
+  <article class="box">
+    <h2>{{if .URL}}<a href="{{.URL}}">{{.Title}}</a>{{else}}{{.Title}}{{end}} <span class="count">{{len .Certs}}</span></h2>
+    {{if .Certs}}
+    <div class="scroll">
+      <table class="certs">
+        <thead>
+          <tr>
+            <th class="dotcell"></th>
+            <th>Certificate</th>
+            <th>Status</th>
+            <th>Expires</th>
+            <th class="hide-sm">Private Key</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Certs}}
+          <tr>
+            <td class="dotcell"><span class="dot {{.StatusClass}}{{if .Pending}} hollow{{end}}" title="{{.Status}}"></span></td>
+            <td>
+              {{if .URL}}<a class="name" href="{{.URL}}" title="{{if .AllNames}}{{.AllNames}}{{else}}{{.ID}}{{end}}">{{.Name}}</a>
+              {{- else}}<span class="name" title="{{if .AllNames}}{{.AllNames}}{{else}}{{.ID}}{{end}}">{{.Name}}</span>{{end}}
+              {{if .OtherNames}}<div class="sub">{{.OtherNames}}</div>{{end}}
+              {{if .AllNames}}
+              <div class="sub">
+                {{.ID}}{{if .SHA1}} &middot; sha1 {{.SHA1}}{{end}}{{if gt .Versions 1}} &middot; {{.Versions}} versions stored{{end}}
+              </div>
+              {{end}}
+            </td>
+            <td>
+              <span class="pill {{.StatusClass}}">{{.Status}}</span>
+              {{if .Message}}<div class="sub">{{.Message}}</div>{{end}}
+            </td>
+            <td class="exp">
+              {{with .Expires}}
+              <span class="v-{{.Class}}" title="{{.Exact}}">{{.Date}}</span>
+              <div class="sub">{{.Relative}}</div>
+              {{else}}<span class="none">&mdash;</span>{{end}}
+            </td>
+            <td class="key hide-sm">
+              {{if .Key}}<span class="v-{{.KeyClass}}">{{.Key}}</span>{{else}}<span class="none">&mdash;</span>{{end}}
+              {{if .KeyNote}}<div class="sub">{{.KeyNote}}</div>{{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="empty">{{.Empty}}</p>
+    {{end}}
+  </article>
+  {{end}}
+
+  {{if .PrivateCAs}}
+  <article class="box">
+    <h2>Private CA Keys <span class="count">{{len .PrivateCAs}}</span></h2>
+    <div class="scroll">
+      <table class="certs">
+        <thead>
+          <tr>
+            <th>Certificate Authority</th>
+            <th>Expires</th>
+            <th>Private Key</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .PrivateCAs}}
+          <tr>
+            <td>
+              <a class="name" href="{{.URL}}">{{.Name}}</a>
+              <div class="sub">{{if .Kind}}{{.Kind}} &middot; {{end}}{{.ID}}</div>
+            </td>
+            <td class="exp">
+              {{with .Expires}}
+              <span class="v-{{.Class}}" title="{{.Exact}}">{{.Date}}</span>
+              <div class="sub">{{.Relative}}</div>
+              {{else}}<span class="none">&mdash;</span>{{end}}
+            </td>
+            <td class="key">
+              <span class="v-{{.KeyClass}}">{{.Key}}</span>
+              {{if .KeyNote}}<div class="sub">{{.KeyNote}}</div>{{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </article>
+  {{end}}
+
+  {{range .Sections}}{{template "section" .}}{{end}}
+</main>
+
+<footer class="wrap">
+  CertKit Keystore {{.Version.Version}} &middot;
+  <a href="https://github.com/certkit-io/certkit-keystore">source</a> &middot;
+  generated {{.Generated}}, refreshes every minute
+</footer>
+</body>
+</html>
+{{define "section"}}
+  <article class="box">
+    <h2>{{.Title}}</h2>
+    {{if .Notes}}
+    <ul class="notes">
+      {{range .Notes}}<li><strong>{{.Term}}</strong> {{.Text}}</li>{{end}}
+    </ul>
+    {{end}}
+    <dl class="fields">
+      {{range .Fields}}
+      <div class="field">
+        <dt>{{.Label}}</dt>
+        <dd>
+          {{if .Link}}<a href="{{.Link}}">{{.Value}}</a>
+          {{- else if .Value}}<span class="v-{{.Class}}"{{if .Title}} title="{{.Title}}"{{end}}>{{.Value}}</span>
+          {{- else}}<span class="none">&mdash;</span>{{end}}
+          {{- if .Note}} <span class="note">&middot; {{.Note}}</span>{{end}}
+        </dd>
+      </div>
+      {{end}}
+    </dl>
+  </article>
+{{end}}

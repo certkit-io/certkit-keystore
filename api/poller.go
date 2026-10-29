@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,10 +15,33 @@ import (
 	keystoreCrypto "github.com/certkit-io/certkit-keystore/crypto"
 )
 
+// ErrKeystoreUnauthorized means CertKit refused the poll because the keystore
+// hasn't been authorized in the CertKit web application.
+var ErrKeystoreUnauthorized = errors.New("keystore unauthorized (403)")
+
 type PollRequest struct{}
 
 type PollResponse struct {
+	Collections []PollCollection `json:"collections"`
+	// SigningRequests are private CA operations waiting for this keystore.
+	SigningRequests []SigningRequest `json:"signingRequests"`
+	UpdateAvailable *UpdateSignal    `json:"updateAvailable,omitempty"`
+}
+
+// PollCollection is a CertKit collection that uses this keystore, with the
+// certificates the keystore stores for it.
+type PollCollection struct {
+	Id           string            `json:"id"`
+	Name         string            `json:"name"`
 	Certificates []PollCertificate `json:"certificates"`
+}
+
+// UpdateSignal tells the keystore a newer release is available. DownloadURL
+// points at the binary for this keystore's platform; SHA256 is its hex digest.
+type UpdateSignal struct {
+	Version     string `json:"version"`
+	DownloadURL string `json:"downloadUrl"`
+	SHA256      string `json:"sha256"`
 }
 
 type PollCertificate struct {
@@ -57,7 +81,7 @@ func PollForConfiguration() (*PollResponse, error) {
 	}
 
 	url := strings.TrimRight(cfg.CertkitBaseUrl, "/") +
-		"/api/keystore/v1/" + cfg.Keystore.Id + "/poll"
+		"/api/keystore/v2/" + cfg.Keystore.Id + "/poll"
 
 	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -91,7 +115,7 @@ func PollForConfiguration() (*PollResponse, error) {
 		}
 		return &result, nil
 	case http.StatusForbidden:
-		return nil, fmt.Errorf("keystore unauthorized (403)")
+		return nil, ErrKeystoreUnauthorized
 	default:
 		return nil, fmt.Errorf("poll failed: status=%d body=%s", resp.StatusCode, string(respBody))
 	}
