@@ -3,6 +3,7 @@
 #
 # Binaries for programs and plugins
 *.exe
+!selfupdate/testdata/*.exe
 *.exe~
 *.dll
 *.so
